@@ -1,0 +1,28 @@
+[project]
+name = "smc-trader"
+version = "0.1.0"
+description = "Smart Money Concepts trading platform"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "SMC Trader Team" }]
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.0.0",
+    "loguru>=0.7.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

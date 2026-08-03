@@ -1,0 +1,18 @@
+2026-08-03 16:25:06.965 | INFO     | __main__:<module>:1 - Starting SMC Trader
+2026-08-03 16:25:06.966 | INFO     | __main__:<module>:1 - Configuration Loaded
+2026-08-03 16:28:17.695 | INFO     | __main__:main:8 - Starting SMC Trader
+2026-08-03 16:28:17.696 | INFO     | __main__:main:9 - Symbol: XAUUSD
+2026-08-03 16:28:17.696 | INFO     | __main__:main:10 - Timeframe: M15
+2026-08-03 16:28:17.697 | INFO     | __main__:main:11 - Configuration Loaded
+2026-08-03 21:27:37 | INFO     | main:main:9 - Starting SMC Trader
+2026-08-03 21:27:37 | INFO     | main:main:10 - Using symbol: XAUUSD
+2026-08-03 21:27:37 | INFO     | main:main:11 - Using timeframe: M15
+2026-08-03 21:27:37 | INFO     | main:main:12 - Using risk percent: 1.0
+2026-08-03 21:27:37 | INFO     | main:main:13 - Using data directory: data_store
+2026-08-03 21:27:37 | INFO     | main:main:20 - Configuration loaded successfully
+2026-08-03 22:16:15 | INFO     | main:main:9 - Starting SMC Trader
+2026-08-03 22:16:15 | INFO     | main:main:10 - Using symbol: XAUUSD
+2026-08-03 22:16:15 | INFO     | main:main:11 - Using timeframe: M15
+2026-08-03 22:16:15 | INFO     | main:main:12 - Using risk percent: 1.0
+2026-08-03 22:16:15 | INFO     | main:main:13 - Using data directory: data_store
+2026-08-03 22:16:15 | INFO     | main:main:20 - Configuration loaded successfully
