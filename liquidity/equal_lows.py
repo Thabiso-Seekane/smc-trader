@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core.constants import pip_size
 from liquidity.enums import LiquidityType
 from liquidity.models import LiquidityCluster, LiquidityLevel
 
@@ -18,12 +19,15 @@ class EqualLowDetector:
     """Detect equal-low clusters from a list of liquidity levels.
 
     Attributes:
-        tolerance: Maximum price distance (as a fraction of price) between
-            swing-low levels for them to be considered "equal".
-            Default 0.0002 (0.02 %).
+        tolerance: Maximum distance (in pips) between swing-low levels for
+            them to be considered "equal". Default 2 (two pips).
+        symbol: Instrument the levels belong to. Used to normalize the pip
+            tolerance to an absolute price distance, since brokers differ
+            in precision.
     """
 
-    tolerance: float = 0.0002
+    tolerance: float = 2
+    symbol: str = ""
 
     def detect(self, levels: list[LiquidityLevel]) -> list[LiquidityCluster]:
         """Group proximate swing-low levels into equal-low clusters.
@@ -35,6 +39,8 @@ class EqualLowDetector:
             A list of :class:`LiquidityCluster` objects, one per group of
             proximate swing lows. Non-swing-low levels are ignored.
         """
+        max_gap = self.tolerance * pip_size(self.symbol)
+
         swing_lows = [l for l in levels if l.liquidity_type == LiquidityType.SWING_LOW]
         sorted_levels = sorted(swing_lows, key=lambda l: l.price)
 
@@ -49,10 +55,7 @@ class EqualLowDetector:
             for j, other in enumerate(sorted_levels):
                 if j in used:
                     continue
-                if (
-                    abs(level.price - other.price) / max(level.price, 0.0001)
-                    <= self.tolerance
-                ):
+                if abs(level.price - other.price) <= max_gap:
                     group.append(other)
                     used.add(j)
 

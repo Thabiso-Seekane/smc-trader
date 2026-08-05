@@ -29,4 +29,18 @@ class LiquidityStatus(str, Enum):
     TARGETED = "TARGETED"
 
 
-__all__ = ["LiquidityType", "LiquidityStatus"]
+class LiquidityScope(str, Enum):
+    """Structural significance of a liquidity pool.
+
+    External liquidity represents major structural levels at which price
+    frequently reverses (e.g. weekly highs/lows, daily highs/lows, major
+    swing points, range extremes). Internal liquidity represents minor
+    pools inside the current dealing range that are frequently swept as
+    part of continuation moves (minor swings, internal equal highs/lows).
+    """
+
+    EXTERNAL = "EXTERNAL"
+    INTERNAL = "INTERNAL"
+
+
+__all__ = ["LiquidityType", "LiquidityStatus", "LiquidityScope"]
