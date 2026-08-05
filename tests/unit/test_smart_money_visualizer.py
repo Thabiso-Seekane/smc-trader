@@ -3,6 +3,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
+from smart_money.displacement import DisplacementScore
 from smart_money.enums import Direction, StructureEventType
 from smart_money.models import SmartMoneyAnalysis, StructureEvent
 from smart_money.visualizer import SmartMoneyVisualizer
@@ -31,7 +32,7 @@ def make_analysis():
         broken_price=1.02,
         broken_index=1,
         confirmation_index=2,
-        displacement_strength=80.0,
+        displacement=DisplacementScore(strength=80.0, confirmed=True),
     )
     bos = StructureEvent(
         event_type=StructureEventType.BOS,
@@ -40,7 +41,7 @@ def make_analysis():
         broken_price=1.0,
         broken_index=0,
         confirmation_index=2,
-        displacement_strength=55.0,
+        displacement=DisplacementScore(strength=55.0),
     )
     return SmartMoneyAnalysis(events=[choch, bos])
 

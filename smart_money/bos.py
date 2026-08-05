@@ -5,13 +5,16 @@ high (bullish) or swing low (bearish) in the direction of the current
 structure. Unlike a CHoCH, a BOS does **not** require a prior liquidity
 sweep — it simply confirms that the trend is continuing.
 
+CHoCH says: "Maybe the market changed."
+BOS says:    "The market has confirmed the new direction."
+
 Bullish BOS::
 
-    HH -> HL -> HH -> (break prior HH) -> Bullish BOS
+    HH -> HL -> HH -> HL -> (break prior HH) -> Bullish BOS
 
 Bearish BOS::
 
-    LL -> LH -> LL -> (break prior LL) -> Bearish BOS
+    LL -> LH -> LL -> LH -> (break prior LL) -> Bearish BOS
 
 The BOS detector optionally classifies each break as **Internal** or
 **External** based on the liquidity scope of the level being broken:
@@ -155,19 +158,21 @@ class BosDetector:
             return None
 
         confirm_index = self._find_break_confirmation(
-            candles, broken_index=broken.index, broken_price=broken.price,
+            candles,
+            broken_index=broken.index,
+            broken_price=broken.price,
             bullish=True,
         )
         if confirm_index is None:
             return None
 
-        strength = displacement.score(
+        disp = displacement.assess(
             candles=candles,
             index=confirm_index,
             broken_price=broken.price,
             direction_is_bullish=True,
         )
-        if strength < self.min_displacement:
+        if disp.strength < self.min_displacement:
             return None
 
         system = self._classify_system(broken.price, external_prices)
@@ -179,7 +184,7 @@ class BosDetector:
             broken_price=broken.price,
             broken_index=broken.index,
             confirmation_index=confirm_index,
-            displacement_strength=strength,
+            displacement=disp,
             system=system,
             prev_swing_index=current.index,
             prev_swing_price=current.price,
@@ -217,19 +222,21 @@ class BosDetector:
             return None
 
         confirm_index = self._find_break_confirmation(
-            candles, broken_index=broken.index, broken_price=broken.price,
+            candles,
+            broken_index=broken.index,
+            broken_price=broken.price,
             bullish=False,
         )
         if confirm_index is None:
             return None
 
-        strength = displacement.score(
+        disp = displacement.assess(
             candles=candles,
             index=confirm_index,
             broken_price=broken.price,
             direction_is_bullish=False,
         )
-        if strength < self.min_displacement:
+        if disp.strength < self.min_displacement:
             return None
 
         system = self._classify_system(broken.price, external_prices)
@@ -241,7 +248,7 @@ class BosDetector:
             broken_price=broken.price,
             broken_index=broken.index,
             confirmation_index=confirm_index,
-            displacement_strength=strength,
+            displacement=disp,
             system=system,
             prev_swing_index=current.index,
             prev_swing_price=current.price,

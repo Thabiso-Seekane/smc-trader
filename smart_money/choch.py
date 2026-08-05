@@ -21,12 +21,34 @@ Bullish CHoCH sequence::
         v
     Bullish CHoCH
 
+Bearish CHoCH sequence::
+
+    Uptrend (HH -> HL -> HH)
+        |
+        v
+    Liquidity Sweep (buy-side taken)
+        |
+        v
+    Lower High (LH)
+        |
+        v
+    Break of prior Higher Low (HL)
+        |
+        v
+    Bearish CHoCH
+
 The detector does **not** simply fire because price breaks a level. It
 requires all three pre-conditions:
 
-    1. Existing bearish structure (a run of LL/LH before the reversal).
-    2. Liquidity interaction (a sell-side level is swept).
-    3. Structural break (HL forms, then price breaks the prior LH).
+    Bullish:
+        1. Existing bearish trend (a run of LL/LH before the reversal).
+        2. Sweep sell-side liquidity.
+        3. Break the previous lower high.
+
+    Bearish:
+        1. Existing bullish trend (a run of HH/HL before the reversal).
+        2. Sweep buy-side liquidity.
+        3. Break the previous higher low.
 """
 
 from __future__ import annotations
@@ -169,19 +191,21 @@ class ChoCHDetector:
             return None
 
         confirm_index = self._find_break_confirmation(
-            candles, broken_index=broken.index, broken_price=broken.price,
+            candles,
+            broken_index=broken.index,
+            broken_price=broken.price,
             bullish=True,
         )
         if confirm_index is None:
             return None
 
-        strength = displacement.score(
+        disp = displacement.assess(
             candles=candles,
             index=confirm_index,
             broken_price=broken.price,
             direction_is_bullish=True,
         )
-        if strength < self.min_displacement:
+        if disp.strength < self.min_displacement:
             return None
 
         return StructureEvent(
@@ -191,7 +215,7 @@ class ChoCHDetector:
             broken_price=broken.price,
             broken_index=broken.index,
             confirmation_index=confirm_index,
-            displacement_strength=strength,
+            displacement=disp,
             prev_swing_index=current.index,
             prev_swing_price=current.price,
             note="Bullish CHoCH after sell-side sweep",
@@ -235,19 +259,21 @@ class ChoCHDetector:
             return None
 
         confirm_index = self._find_break_confirmation(
-            candles, broken_index=broken.index, broken_price=broken.price,
+            candles,
+            broken_index=broken.index,
+            broken_price=broken.price,
             bullish=False,
         )
         if confirm_index is None:
             return None
 
-        strength = displacement.score(
+        disp = displacement.assess(
             candles=candles,
             index=confirm_index,
             broken_price=broken.price,
             direction_is_bullish=False,
         )
-        if strength < self.min_displacement:
+        if disp.strength < self.min_displacement:
             return None
 
         return StructureEvent(
@@ -257,7 +283,7 @@ class ChoCHDetector:
             broken_price=broken.price,
             broken_index=broken.index,
             confirmation_index=confirm_index,
-            displacement_strength=strength,
+            displacement=disp,
             prev_swing_index=current.index,
             prev_swing_price=current.price,
             note="Bearish CHoCH after buy-side sweep",

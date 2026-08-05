@@ -2,8 +2,12 @@
 
 ``SmartMoneyAnalyzer.analyze(candles, structure, liquidity)`` wires together
 the Week 2 market structure engine, the Week 3 liquidity engine, and the
-Week 4 CHoCH / BOS detectors so callers interact with a single entry point
-and receive a complete set of structural events.
+:class:`smart_money.engine.StructureEventEngine` so callers interact with a
+single entry point and receive a complete set of structural events.
+
+The analyzer is intentionally a thin adapter: it validates inputs and then
+delegates all CHoCH / BOS / (future MSS) detection to the engine. This keeps
+the analyzer's public signature stable while the engine grows new detectors.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import pandas as pd
 from liquidity.models import LiquidityMap
 from smart_money.bos import BosDetector
 from smart_money.choch import ChoCHDetector
+from smart_money.engine import StructureEventEngine
 from smart_money.models import SmartMoneyAnalysis
 from smart_money.validator import SmartMoneyValidator
 from structure.models import MarketStructure
@@ -54,11 +59,10 @@ class SmartMoneyAnalyzer:
         The pipeline is:
 
             1. Validate the candle, structure, and liquidity inputs.
-            2. Collect the swept sell-side and buy-side liquidity levels.
-            3. Collect the external structural prices for BOS classification.
-            4. Run the CHoCH detector.
-            5. Run the BOS detector.
-            6. Merge, de-duplicate, and sort events by confirmation index.
+            2. Build the :class:`StructureEventEngine` with the configured
+               CHoCH and BOS detectors.
+            3. Delegate detection to the engine, which runs each detector,
+               de-duplicates, sorts, and records the EventHistory.
 
         Args:
             candles: OHLCV candle DataFrame (``date``, ``open``, ``high``,
@@ -72,44 +76,27 @@ class SmartMoneyAnalyzer:
         """
         SmartMoneyValidator().validate(candles, structure, liquidity)
 
-        choch = ChoCHDetector(
-            min_structure_points=self.min_structure_points,
-            min_displacement=self.min_displacement,
-            pip_size=self.pip_size,
-            min_move_pips=self.min_move_pips,
-        )
-        bos = BosDetector(
-            min_structure_points=max(2, self.min_structure_points - 1),
-            min_displacement=self.min_displacement,
-            pip_size=self.pip_size,
-            min_move_pips=self.min_move_pips,
+        engine = StructureEventEngine(
+            choch=ChoCHDetector(
+                min_structure_points=self.min_structure_points,
+                min_displacement=self.min_displacement,
+                pip_size=self.pip_size,
+                min_move_pips=self.min_move_pips,
+            ),
+            bos=BosDetector(
+                min_structure_points=max(2, self.min_structure_points - 1),
+                min_displacement=self.min_displacement,
+                pip_size=self.pip_size,
+                min_move_pips=self.min_move_pips,
+            ),
+            timeframe=self.timeframe,
         )
 
-        events = choch.detect(
-            structure=structure,
+        return engine.analyze(
             candles=candles,
-            swept_sell_side=liquidity.swept_levels,
-            swept_buy_side=liquidity.swept_levels,
+            structure=structure,
+            liquidity=liquidity,
         )
-        events.extend(
-            bos.detect(
-                structure=structure,
-                candles=candles,
-                external_prices=self._external_prices(liquidity),
-            )
-        )
-
-        # De-duplicate and sort by confirmation index.
-        unique: list = []
-        seen: set[tuple] = set()
-        for e in sorted(events, key=lambda e: e.confirmation_index):
-            key = (e.event_type, e.direction, e.confirmation_index, e.broken_index)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(e)
-
-        return SmartMoneyAnalysis(events=unique, timeframe=self.timeframe)
 
     def _external_prices(self, liquidity: LiquidityMap) -> set[float]:
         """Return the set of external (major structural) level prices."""

@@ -1,7 +1,7 @@
-"""Data models for the Smart Money (CHoCH / BOS) engine.
+"""Data models for the Smart Money (CHoCH / BOS / MSS) engine.
 
 This module contains only data models (dataclasses) and holds no business
-logic. Structural-event detection is performed by the choch, bos, and
+logic. Structural-event detection is performed by the choch, bos, mss, and
 displacement modules.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from smart_money.displacement import DisplacementScore
 from smart_money.enums import (
     BreakSystem,
     Direction,
@@ -20,7 +21,7 @@ from smart_money.enums import (
 
 @dataclass(slots=True)
 class StructureEvent:
-    """A single structural change (CHoCH or BOS).
+    """A single structural change (CHoCH, BOS, or MSS).
 
     Events store the full context of a structural break rather than a
     boolean flag. This lets callers reconstruct the history of structural
@@ -28,13 +29,14 @@ class StructureEvent:
     prices involved, and whether the break was internal or external.
 
     Attributes:
-        event_type: Whether this is a CHoCH or a BOS.
+        event_type: Whether this is a CHoCH, a BOS, or an MSS.
         direction: Bullish or bearish break.
         timestamp: Time of the confirmation candle.
         broken_price: Price of the structural level that was broken.
         broken_index: Candle index of the structural level that was broken.
         confirmation_index: Candle index confirming the break.
-        displacement_strength: 0–100 measure of breakout validity.
+        displacement: Full :class:`DisplacementScore` for the break.
+        displacement_strength: Convenience shorthand for the 0–100 strength.
         system: Internal or external break (for BOS events).
         prev_swing_index: Index of the preceding swing of the same type
             that defined the broken level.
@@ -48,11 +50,21 @@ class StructureEvent:
     broken_price: float
     broken_index: int
     confirmation_index: int
-    displacement_strength: float = 0.0
+    displacement: DisplacementScore = field(default_factory=DisplacementScore)
     system: BreakSystem | None = None
     prev_swing_index: int | None = None
     prev_swing_price: float | None = None
     note: str = ""
+
+    @property
+    def displacement_strength(self) -> float:
+        """Return the 0–100 displacement strength of this break."""
+        return self.displacement.strength
+
+    @property
+    def is_confirmed(self) -> bool:
+        """Return True when the break has confirmed displacement."""
+        return self.displacement.confirmed
 
     @property
     def is_choch(self) -> bool:
@@ -80,12 +92,32 @@ class SmartMoneyAnalysis:
     """Aggregated CHoCH / BOS analysis result.
 
     This is the output of :class:`smart_money.analyzer.SmartMoneyAnalyzer`.
-    It retains the full ordered history of structural events so callers can
-    inspect bullish/bearish CHoCHs, BOSs, and their displacement quality.
+    The strategy layer consumes this result without needing to know how
+    CHoCH and BOS are detected.
+
+        * ``history``       — the full ordered list of structural events.
+        * ``latest_event``  — the most recent structural event.
+        * ``latest_direction`` — the direction of the latest event.
     """
 
     events: list[StructureEvent] = field(default_factory=list)
     timeframe: str = ""
+
+    @property
+    def history(self) -> list[StructureEvent]:
+        """Return the full chronological list of structural events."""
+        return self.events
+
+    @property
+    def latest_event(self) -> StructureEvent | None:
+        """Return the most recent structural event, if any."""
+        return self.events[-1] if self.events else None
+
+    @property
+    def latest_direction(self) -> Direction | None:
+        """Return the direction of the most recent structural event."""
+        latest = self.latest_event
+        return latest.direction if latest is not None else None
 
     @property
     def choch_events(self) -> list[StructureEvent]:
@@ -96,6 +128,11 @@ class SmartMoneyAnalysis:
     def bos_events(self) -> list[StructureEvent]:
         """Return only BOS events."""
         return [e for e in self.events if e.is_bos]
+
+    @property
+    def mss_events(self) -> list[StructureEvent]:
+        """Return only MSS (Market Structure Shift) events."""
+        return [e for e in self.events if e.event_type == StructureEventType.MSS]
 
     @property
     def bullish_events(self) -> list[StructureEvent]:
@@ -109,8 +146,9 @@ class SmartMoneyAnalysis:
 
     @property
     def latest(self) -> StructureEvent | None:
-        """Return the most recent structural event, if any."""
-        return self.events[-1] if self.events else None
+        """Alias for :attr:`latest_event`."""
+        return self.latest_event
 
 
 __all__ = ["StructureEvent", "SmartMoneyAnalysis", "DisplacementQuality"]
+

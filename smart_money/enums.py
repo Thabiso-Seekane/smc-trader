@@ -13,6 +13,7 @@ class StructureEventType(str, Enum):
 
     CHOCH = "CHOCH"
     BOS = "BOS"
+    MSS = "MSS"
 
 
 class Direction(str, Enum):

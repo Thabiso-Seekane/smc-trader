@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from smart_money.displacement import DisplacementScore
 from smart_money.enums import (
     BreakSystem,
     Direction,
@@ -29,13 +30,15 @@ def test_structure_event_properties():
         broken_price=1.0,
         broken_index=2,
         confirmation_index=5,
-        displacement_strength=80.0,
+        displacement=DisplacementScore(strength=80.0),
         system=BreakSystem.EXTERNAL,
     )
     assert event.is_choch is False
     assert event.is_bos is True
     assert event.is_bullish is True
     assert event.is_bearish is False
+    assert event.displacement_strength == 80.0
+    assert event.is_confirmed is False
 
 
 def test_analysis_properties():
@@ -62,3 +65,6 @@ def test_analysis_properties():
     assert analysis.bullish_events == [bos]
     assert analysis.bearish_events == [choch]
     assert analysis.latest == bos
+    assert analysis.latest_event == bos
+    assert analysis.latest_direction == Direction.BULLISH
+    assert analysis.history == [choch, bos]
