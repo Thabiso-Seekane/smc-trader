@@ -157,7 +157,7 @@ class ImbalanceEngine:
         fills.analyze(valid, candles=df)
 
         # 4) Link to OB / events / liquidity.
-        self._link(valid, order_blocks, liquidity)
+        self._link(valid, order_blocks, liquidity, events)
 
         # 5) Rank.
         ranked = ranker.rank(
@@ -205,14 +205,16 @@ class ImbalanceEngine:
         ranked = ranker.rank(all_gaps)
         return self._build_map(ranked)
 
-    def _link(self, gaps, order_blocks, liquidity) -> None:
+    def _link(self, gaps, order_blocks, liquidity, events=None) -> None:
         """Link each gap to aligned Order Blocks, events, and liquidity."""
         blocks = _as_block_list(order_blocks)
         levels = _as_level_list(liquidity)
+        event_list = _as_event_list(events)
 
         for gap in gaps:
             gap.linked_order_block = self._find_aligned_block(gap, blocks)
             gap.linked_liquidity = self._find_aligned_level(gap, levels)
+            gap.linked_structure_event = self._find_aligned_event(gap, event_list)
 
     def _find_aligned_block(self, gap: FairValueGap, blocks) -> object | None:
         """Find the Order Block aligned with this gap (direction + overlap)."""
@@ -231,6 +233,26 @@ class ImbalanceEngine:
                 continue
             if gap.low <= float(price) <= gap.high:
                 return level
+        return None
+
+    def _find_aligned_event(self, gap: FairValueGap, events) -> object | None:
+        """Find the structural event (CHoCH/BOS) aligned with this gap.
+
+        An event is aligned when it shares the gap's direction and its
+        confirmation index is at or before the gap's origin.
+        """
+        for event in events:
+            is_bullish = getattr(event, "is_bullish", None)
+            if is_bullish is None:
+                continue
+            event_is_bullish = bool(is_bullish)
+            gap_is_bullish = gap.direction == OrderBlockType.BULLISH
+            if event_is_bullish != gap_is_bullish:
+                continue
+            index = getattr(event, "confirmation_index", None)
+            if index is not None and index > gap.index:
+                continue
+            return event
         return None
 
     def _build_map(self, gaps: list[FairValueGap]) -> ImbalanceMap:
