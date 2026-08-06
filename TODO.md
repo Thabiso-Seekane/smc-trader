@@ -68,3 +68,76 @@ ImbalanceMap
 - `tests/unit/test_gap_validator.py` (new)
 - `tests/unit/test_gap_ranking.py` (new)
 - `tests/unit/test_imbalance_engine.py` (new)
+
+---
+
+# Week 7 — Strategy Engine — Implementation TODO
+
+## Goal
+Build the **Confluence Engine** referenced in Weeks 5-6. It consumes all
+upstream detection outputs (TradeZone, ImbalanceMap, OrderBlockMap,
+LiquidityMap, StructureEvents / MarketStructure) and produces
+high-probability **setups**. It **prepares** — it does NOT execute
+(execution = Week 8).
+
+```
+TradeZone / ImbalanceMap / OrderBlockMap / LiquidityMap / Events
+       │
+       ▼
+Strategy Engine (ConfluenceEngine)
+       │
+       ▼
+TradeZoneBuilder (geometry + anchors)
+       │
+       ▼
+ConfluenceScoringEngine (config-driven weights)
+       │
+       ▼
+StrategyFilters (independent gates)
+       │
+       ▼
+StrategyAnalyzer (façade) → TradeDecision (EXCELLENT/STRONG/
+                                   ACCEPTABLE/IGNORE)
+```
+
+## Steps
+
+- [x] Create `strategy/enums.py` (`SignalDirection`, `DecisionStatus`, `SetupType`, `PremiumDiscountPosition`)
+- [x] Create `strategy/models.py` (`TradeZone`, `TradeDecision`, `StrategyResult`)
+- [x] Create `strategy/premium_discount.py` (`PremiumDiscountAnalyzer`)
+- [x] Create `strategy/higher_timeframe.py` (`HigherTimeframeAnalyzer`)
+- [x] Create `strategy/scoring.py` (`ConfluenceScorer` — config-driven weights/thresholds)
+- [x] Create `strategy/confluence.py` (`ConfluenceEngine` — decision maker)
+- [x] Create `strategy/filters.py` (`StrategyFilters`)
+- [x] Create `strategy/trade_zone.py` (`TradeZoneBuilder`)
+- [x] Create `strategy/analyzer.py` (`StrategyAnalyzer` façade)
+- [x] Create `strategy/visualizer.py` (setup visualization)
+- [x] Create `strategy/README.md` (scoring methodology + API)
+- [x] Update `strategy/__init__.py` (export new API)
+- [x] Create `tests/unit/test_premium_discount.py`
+- [x] Create `tests/unit/test_trade_zone.py`
+- [x] Create `tests/unit/test_filters.py`
+- [x] Create `tests/unit/test_confluence.py`
+- [x] Create `tests/unit/test_strategy.py`
+- [x] Run full test suite (**270 passed, 1 skipped**)
+
+## Dependent Files to Edit
+
+- `strategy/` package (new)
+- `strategy/enums.py` (new)
+- `strategy/models.py` (new)
+- `strategy/premium_discount.py` (new)
+- `strategy/higher_timeframe.py` (new)
+- `strategy/scoring.py` (new)
+- `strategy/confluence.py` (new)
+- `strategy/filters.py` (new)
+- `strategy/trade_zone.py` (new)
+- `strategy/analyzer.py` (new)
+- `strategy/visualizer.py` (new)
+- `strategy/README.md` (new)
+- `strategy/__init__.py` (new)
+- `tests/unit/test_premium_discount.py` (new)
+- `tests/unit/test_trade_zone.py` (new)
+- `tests/unit/test_filters.py` (new)
+- `tests/unit/test_confluence.py` (new)
+- `tests/unit/test_strategy.py` (new)

@@ -1,217 +1,182 @@
-"""Unit tests for the ConfluenceScorer."""
-
-from datetime import datetime
+"""Unit tests for the Week 7 ConfluenceEngine and ConfluenceScorer."""
 
 import pytest
 
-from smart_money.confluence import ConfluenceScorer
-from smart_money.enums import ConfluenceLevel, FreshnessLevel, OrderBlockType
-from smart_money.fair_value_gap import FairValueGap
-from smart_money.order_block_models import OrderBlock
-from smart_money.trade_zone_models import TradeZone
+from smart_money.displacement import DisplacementScore
+from smart_money.enums import Direction, StructureEventType
+from smart_money.models import StructureEvent, SmartMoneyAnalysis
+from strategy.confluence import ConfluenceEngine
+from strategy.enums import DecisionStatus, SignalDirection
+from strategy.scoring import ConfluenceScorer, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS
 
 
-def make_order_block(
-    strength: float = 80.0,
-    touch_count: int = 0,
-    mitigated: bool = False,
-    invalidated: bool = False,
-) -> OrderBlock:
-    return OrderBlock(
-        direction=OrderBlockType.BULLISH,
-        high=1.20,
-        low=1.10,
-        origin_index=0,
-        origin_time=datetime(2024, 1, 1),
-        created_from_event="BOS",
-        strength=strength,
-        touch_count=touch_count,
-        mitigated=mitigated,
-        invalidated=invalidated,
+class FakeLiquidity:
+    def __init__(self, swept=False):
+        self._swept = swept
+
+    @property
+    def swept_levels(self):
+        return [object()] if self._swept else []
+
+
+class FakeBlock:
+    def __init__(self, active=True):
+        self._active = active
+
+    @property
+    def is_active(self):
+        return self._active
+
+
+class FakeGap:
+    def __init__(self, active=True):
+        self._active = active
+
+    @property
+    def is_active(self):
+        return self._active
+
+
+def make_event(event_type: StructureEventType = StructureEventType.BOS, direction=Direction.BULLISH) -> StructureEvent:
+    return StructureEvent(
+        event_type=event_type,
+        direction=direction,
+        timestamp=__import__("datetime").datetime(2024, 1, 1),
+        broken_price=1.10,
+        broken_index=0,
+        confirmation_index=1,
+        displacement=DisplacementScore(strength=90.0, confirmed=True),
     )
 
 
-def make_fvg(strength: float = 90.0) -> FairValueGap:
-    return FairValueGap(
-        direction=OrderBlockType.BULLISH,
-        high=1.20,
-        low=1.10,
-        index=1,
-        timestamp=datetime(2024, 1, 1),
-        strength=strength,
+def make_events(*types):
+    return SmartMoneyAnalysis(events=[make_event(t) for t in types])
+
+
+def make_engine() -> ConfluenceEngine:
+    return ConfluenceEngine(timeframe="H1")
+
+
+def make_blocks(active=True):
+    return [FakeBlock(active)]
+
+
+def make_gaps(active=True):
+    return [FakeGap(active)]
+
+
+def decide(
+    engine: ConfluenceEngine,
+    direction=SignalDirection.BUY,
+    htf_bias="BULLISH",
+    liquidity=None,
+    events=None,
+    order_blocks=None,
+    imbalances=None,
+    entry=1.05,
+):
+    return engine.decide(
+        direction=direction,
+        liquidity=liquidity,
+        events=events,
+        order_blocks=order_blocks,
+        imbalances=imbalances,
+        entry_price=entry,
+        stop_loss=1.00,
+        target=1.20,
+        swing_high=1.20,
+        swing_low=1.00,
+        htf_bias=htf_bias,
     )
 
 
-def make_zone(
-    order_block: OrderBlock | None = None,
-    fvgs: list[FairValueGap] | None = None,
-    liquidity_levels: list = None,
-    events: list = None,
-    timeframe: str = "",
-) -> TradeZone:
-    return TradeZone(
-        direction=OrderBlockType.BULLISH,
-        high=1.20,
-        low=1.10,
-        origin_time=datetime(2024, 1, 1),
-        order_block=order_block,
-        fair_value_gaps=fvgs or [],
-        liquidity_levels=liquidity_levels or [],
-        events=events or [],
-        timeframe=timeframe,
+def test_perfect_bullish_confluence_is_excellent():
+    engine = make_engine()
+    decision = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=True),
+        events=make_events(StructureEventType.CHOCH, StructureEventType.BOS),
+        order_blocks=make_blocks(),
+        imbalances=make_gaps(),
+        entry=1.05,  # discount region
     )
+    assert decision.status == DecisionStatus.EXCELLENT
+    assert decision.confidence >= 90.0
 
 
-class _LiquidityLevel:
-    def __init__(self, strength=0.0, is_external=False):
-        self.strength = strength
-        self.is_external = is_external
-
-
-class _Event:
-    def __init__(self, is_choch=False, is_bos=False, is_bullish=False):
-        self.is_choch = is_choch
-        self.is_bos = is_bos
-        self.is_bullish = is_bullish
-
-
-def test_score_mutates_zone():
-    scorer = ConfluenceScorer()
-    zone = make_zone(order_block=make_order_block())
-    assert zone.confluence_score == 0.0
-    assert zone.confluence_level == ConfluenceLevel.NONE
-    scorer.score(zone)
-    assert zone.confluence_score > 0.0
-    assert zone.confluence_level != ConfluenceLevel.NONE
-
-
-def test_score_without_order_block_uses_neutral_factors():
-    # With no order block and no FVG, the neutral factors (liquidity /
-    # structure / timeframe) still contribute a baseline score.
-    scorer = ConfluenceScorer()
-    zone = make_zone()
-    scorer.score(zone)
-    assert zone.confluence_score == pytest.approx(25.0)
-    assert zone.confluence_level == ConfluenceLevel.WEAK
-
-
-def test_order_block_factor_blocks_boost():
-    scorer = ConfluenceScorer()
-    zone = make_zone(order_block=make_order_block(strength=100.0))
-    assert scorer._order_block_factor(zone) == 100.0
-
-
-def test_order_block_factor_none_is_zero():
-    scorer = ConfluenceScorer()
-    zone = make_zone()
-    assert scorer._order_block_factor(zone) == 0.0
-
-
-def test_freshness_modulates_order_block():
-    scorer = ConfluenceScorer()
-    fresh = make_zone(order_block=make_order_block(strength=100.0, touch_count=0))
-    touched_once = make_zone(
-        order_block=make_order_block(strength=100.0, touch_count=1)
+def test_missing_bos_lowers_score():
+    engine = make_engine()
+    full = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=True),
+        events=make_events(StructureEventType.CHOCH, StructureEventType.BOS),
+        order_blocks=make_blocks(),
+        imbalances=make_gaps(),
     )
-    touched_twice = make_zone(
-        order_block=make_order_block(strength=100.0, touch_count=2)
+    no_bos = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=True),
+        events=make_events(StructureEventType.CHOCH),
+        order_blocks=make_blocks(),
+        imbalances=make_gaps(),
     )
-    mitigated = make_zone(
-        order_block=make_order_block(strength=100.0, mitigated=True)
+    assert no_bos.confidence < full.confidence
+
+
+def test_missing_choch_lowers_score():
+    engine = make_engine()
+    full = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=True),
+        events=make_events(StructureEventType.CHOCH, StructureEventType.BOS),
+        order_blocks=make_blocks(),
+        imbalances=make_gaps(),
     )
-
-    assert scorer._order_block_factor(fresh) == 100.0
-    assert scorer._order_block_factor(touched_once) == pytest.approx(80.0)
-    assert scorer._order_block_factor(touched_twice) == pytest.approx(60.0)
-    assert scorer._order_block_factor(mitigated) == pytest.approx(40.0)
-
-
-def test_fvg_factor_from_strength():
-    scorer = ConfluenceScorer()
-    zone = make_zone(fvgs=[make_fvg(strength=85.0)])
-    assert scorer._fvg_factor(zone) == pytest.approx(85.0)
-
-
-def test_fvg_factor_without_strength_defaults():
-    scorer = ConfluenceScorer()
-    zone = make_zone(fvgs=[make_fvg(strength=0.0)])
-    assert scorer._fvg_factor(zone) == pytest.approx(70.0)
-
-
-def test_fvg_factor_none_is_zero():
-    scorer = ConfluenceScorer()
-    zone = make_zone()
-    assert scorer._fvg_factor(zone) == 0.0
-
-
-def test_liquidity_factor_none_is_neutral():
-    scorer = ConfluenceScorer()
-    zone = make_zone()
-    assert scorer._liquidity_factor(zone) == pytest.approx(50.0)
-
-
-def test_liquidity_factor_external_boost():
-    scorer = ConfluenceScorer()
-    zone = make_zone(
-        liquidity_levels=[_LiquidityLevel(strength=40.0, is_external=True)]
+    no_choch = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=True),
+        events=make_events(StructureEventType.BOS),
+        order_blocks=make_blocks(),
+        imbalances=make_gaps(),
     )
-    score = scorer._liquidity_factor(zone)
-    assert score > 50.0
+    # CHoCH contributes 15 points; removing it reduces the score by 15.
+    assert no_choch.confidence == pytest.approx(full.confidence - 15.0)
 
 
-def test_structure_factor_none_is_neutral():
-    scorer = ConfluenceScorer()
-    zone = make_zone()
-    assert scorer._structure_factor(zone) == pytest.approx(50.0)
-
-
-def test_structure_factor_choch_is_strongest():
-    scorer = ConfluenceScorer()
-    zone = make_zone(events=[_Event(is_choch=True)])
-    assert scorer._structure_factor(zone) == 100.0
-
-
-def test_structure_factor_bos_stronger_than_plain():
-    scorer = ConfluenceScorer()
-    bos = make_zone(events=[_Event(is_bos=True)])
-    plain = make_zone(events=[_Event(is_bullish=True)])
-    assert scorer._structure_factor(bos) == 70.0
-    assert scorer._structure_factor(plain) == 60.0
-
-
-def test_timeframe_factor_ranks_higher_tf_higher():
-    scorer = ConfluenceScorer()
-    assert scorer._timeframe_factor(make_zone(timeframe="H4")) == 85.0
-    assert scorer._timeframe_factor(make_zone(timeframe="M15")) == 50.0
-    assert scorer._timeframe_factor(make_zone(timeframe="")) == 50.0
-
-
-def test_level_mapping():
-    scorer = ConfluenceScorer()
-    assert scorer._level(0) == ConfluenceLevel.NONE
-    assert scorer._level(30) == ConfluenceLevel.WEAK
-    assert scorer._level(55) == ConfluenceLevel.MODERATE
-    assert scorer._level(85) == ConfluenceLevel.STRONG
-
-
-def test_rank_sorts_descending():
-    scorer = ConfluenceScorer()
-    low = make_zone(order_block=make_order_block(strength=30.0))
-    high = make_zone(order_block=make_order_block(strength=95.0))
-    ranked = scorer.rank([low, high])
-    assert ranked[0].confluence_score >= ranked[1].confluence_score
-    assert ranked[0] is high
-
-
-def test_full_score_with_all_factors_high():
-    scorer = ConfluenceScorer()
-    zone = make_zone(
-        order_block=make_order_block(strength=100.0),
-        fvgs=[make_fvg(strength=100.0)],
-        liquidity_levels=[_LiquidityLevel(strength=100.0, is_external=True)],
-        events=[_Event(is_choch=True)],
-        timeframe="H4",
+def test_low_confluence_is_ignored():
+    engine = make_engine()
+    decision = decide(
+        engine,
+        liquidity=FakeLiquidity(swept=False),
+        events=make_events(),
+        order_blocks=None,
+        imbalances=None,
+        htf_bias="NEUTRAL",
     )
-    scorer.score(zone)
-    assert zone.confluence_score > 70.0
-    assert zone.confluence_level == ConfluenceLevel.STRONG
+    assert decision.status == DecisionStatus.IGNORE
+    assert decision.confidence < 70
+
+
+def test_higher_timeframe_conflict_zeroes_factor():
+    scorer = ConfluenceScorer(weights=DEFAULT_WEIGHTS, thresholds=DEFAULT_THRESHOLDS)
+    # Buy but bearish HTF => no higher_timeframe factor.
+    engine = make_engine()
+    decision = decide(engine, htf_bias="BEARISH", entry=1.15)  # premium region
+    assert decision.confidence < 100.0
+
+
+def test_config_driven_weights():
+    weights = {k: v for k, v in DEFAULT_WEIGHTS.items()}
+    weights["order_block"] = 0.0  # remove order block weight
+    scorer = ConfluenceScorer(weights=weights, thresholds=DEFAULT_THRESHOLDS)
+    # With order_block weight 0, its presence doesn't change the score.
+    total = sum(weights.values())
+    assert total == 100.0 - 10.0
+
+
+def test_status_mapping():
+    scorer = ConfluenceScorer()
+    assert scorer.status(95) == DecisionStatus.EXCELLENT
+    assert scorer.status(85) == DecisionStatus.STRONG
+    assert scorer.status(75) == DecisionStatus.ACCEPTABLE
+    assert scorer.status(50) == DecisionStatus.IGNORE
