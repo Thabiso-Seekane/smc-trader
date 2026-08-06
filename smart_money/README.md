@@ -1,10 +1,11 @@
-# Smart Money Engine (CHoCH / BOS / MSS)
+# Smart Money Engine (CHoCH / BOS / MSS / Order Blocks)
 
 Detects structural changes in price — **Change of Character (CHoCH)**,
-**Break of Structure (BOS)**, and (future) **Market Structure Shift (MSS)**
-— as first-class events, not booleans. It reuses the Week 2 market-structure
-engine and the Week 3 liquidity engine to require genuine structure,
-liquidity interaction, and a valid structural break before firing.
+**Break of Structure (BOS)**, (future) **Market Structure Shift (MSS)**,
+and **Order Block zones** — as first-class objects, not booleans. It
+reuses the Week 2 market-structure engine, the Week 3 liquidity engine,
+and the Week 4 structural events to build a complete picture of where
+institutional buying or selling is most likely to occur.
 
 ## What it answers
 
@@ -12,6 +13,9 @@ liquidity interaction, and a valid structural break before firing.
 - Where (and when) did a Bullish or Bearish BOS occur?
 - Was the break internal or external?
 - How strong is the displacement behind each break?
+- Where are the high-quality Bullish / Bearish Order Block zones?
+- Which zones are active, mitigated, or invalidated?
+- How strong is each Order Block (ranked 0-100)?
 
 ## Modules
 
@@ -143,6 +147,95 @@ A CHoCH **never** fires simply by breaking a level. It requires all three:
   major structural liquidity level (from the liquidity map); otherwise
   Internal.
 
+## Order Block Engine (Week 5)
+
+The **Order Block Engine** consumes the Week 2 structure, Week 3 liquidity
+map, and Week 4 structural events to locate high-quality institutional
+zones — where is institutional buying or selling most likely to occur?
+
+```
+Price
+  │
+  ▼
+CHoCH/BOS
+  │
+  ▼
+Displacement
+  │
+  ▼
+Locate Origin Candle
+  │
+  ▼
+Create Order Block
+  │
+  ▼
+Validate
+  │
+  ▼
+Mitigate / Invalidate
+  │
+  ▼
+Rank
+  │
+  ▼
+OrderBlockMap
+```
+
+### The domain model
+
+`OrderBlock` — a single institutional zone with `direction`, `high`, `low`,
+`origin_index`, `origin_time`, `created_from_event`, `displacement_score`,
+`fresh`, `mitigated`, `invalidated`, `strength`, and `timeframe`.
+
+`OrderBlockMap` — the aggregated result exposing `bullish`, `bearish`,
+`active`, `mitigated`, and `invalidated` lists.
+
+```python
+from smart_money import OrderBlockEngine
+
+# structure = structure_engine.analyze(df)
+# liquidity = liquidity_engine.analyze(df, structure)
+# events    = smart_money_engine.analyze(df, structure, liquidity)
+
+results = OrderBlockEngine().analyze(
+    df,
+    structure=structure,
+    liquidity=liquidity,
+    events=events,
+)
+
+print(results.active)      # fresh, usable zones
+print(results.bullish)     # buy-side zones
+print(results.bearish)     # sell-side zones
+```
+
+### Modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `order_block_models.py` | `OrderBlock`, `OrderBlockMap` data models. |
+| `order_blocks.py` | `OrderBlockDetector` — displacement → origin candle → zone. |
+| `order_block_validator.py` | Rejects doji / tiny / weak / consumed zones. |
+| `mitigation.py` | `MitigationDetector` — mitigation, invalidation, freshness. |
+| `ranking.py` | `OrderBlockRanker` — weighted 0-100 score. |
+| `order_block_engine.py` | `OrderBlockEngine` public façade + multi-TF. |
+
+### Multi-timeframe
+
+`OrderBlockEngine.analyze_multi` accepts a dict of `{timeframe: DataFrame}`
+(plus matching structures, liquidities, and events) and merges all zones
+into a single ranked map.
+
+### Visualizer
+
+```python
+import plotly.io as pio
+from smart_money.visualizer import SmartMoneyVisualizer
+
+fig = SmartMoneyVisualizer().build_order_block_figure(order_blocks, candles=df)
+pio.show(fig)
+```
+
 ## Visualizer
 
 ```python
@@ -153,4 +246,102 @@ fig = SmartMoneyVisualizer().render(result, candles=df)
 pio.show(fig)          # view in a browser
 html = SmartMoneyVisualizer().to_html(result, candles=df)  # standalone HTML
 ```
+
+## Trade Zones (Week 5b)
+
+Instead of keeping Order Blocks isolated, the strategy reasons about a
+**Trade Zone** — a single high-probability trading zone that aggregates
+multiple independent confirmation factors into one object scored by a
+**Confluence Score**. This makes Weeks 6–9 cleaner because the future
+Confluence Engine (Week 7) simply evaluates `TradeZone` objects instead
+of merging unrelated structures on the fly.
+
+```
+                  Trade Zone
+                       │
+      ┌────────────────┼─────────────────┐
+      │                │                 │
+      ▼                ▼                 ▼
+ Order Block      Fair Value Gap    Liquidity
+                       │
+                       ▼
+                Confluence Score
+```
+
+A `TradeZone` can combine:
+
+- An **Order Block** (Week 5).
+- One or more **Fair Value Gaps** (Week 6).
+- Nearby **liquidity** (Week 3).
+- Recent **CHoCH / BOS** structural events (Week 4).
+- Higher-timeframe **alignment**.
+
+### The domain model
+
+`TradeZone` — a single zone with `direction`, `high`, `low`, `origin_time`,
+an optional `order_block`, `fair_value_gaps`, `liquidity_levels`, `events`,
+plus a `confluence_score` (0-100) and `confluence_level`.
+
+`TradeZoneMap` — the aggregated result exposing `bullish`, `bearish`,
+`active`, `strongest`, and `all`.
+
+### The Confluence Scorer
+
+The `ConfluenceScorer` blends the confirmation factors into a single 0-100
+score so the strategy can answer "where is the highest-probability trading
+zone?":
+
+| Factor | Weight |
+|--------|--------|
+| Order Block Strength | 30 |
+| Fair Value Gap Presence | 20 |
+| Liquidity Interaction | 20 |
+| Structural Event Context | 15 |
+| Higher-Timeframe Alignment | 15 |
+
+A score of 0-39 is `WEAK`, 40-69 is `MODERATE`, and 70+ is `STRONG`.
+
+```python
+from smart_money import TradeZoneEngine, ConfluenceScorer
+
+# order_blocks = OrderBlockEngine().analyze(df, structure, liquidity, events)
+# liquidity    = liquidity_engine.analyze(df, structure)
+# events       = smart_money_engine.analyze(df, structure, liquidity)
+# fvgs         = FVGDetector().detect(df, timeframe="H1")
+
+zones = TradeZoneEngine(timeframe="H1").analyze(
+    order_blocks=order_blocks,
+    liquidity=liquidity,
+    events=events,
+    fair_value_gaps=fvgs,
+)
+
+print(zones.strongest)   # highest-confluence active zone
+print(zones.all)         # full ranked list
+```
+
+### Multi-timeframe
+
+`TradeZoneEngine.analyze_multi` accepts per-timeframe mappings of order
+blocks, liquidities, events, and FVGs, then merges and ranks the combined
+set into a single map.
+
+### Trade Zone visualizer
+
+```python
+import plotly.io as pio
+from smart_money.visualizer import SmartMoneyVisualizer
+
+fig = SmartMoneyVisualizer().build_trade_zone_figure(zones, candles=df)
+pio.show(fig)
+```
+
+### Trade Zone modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `fair_value_gap.py` | `FairValueGap` model + `FVGDetector` (Week 6 skeleton). |
+| `trade_zone_models.py` | `TradeZone`, `TradeZoneMap` data models. |
+| `confluence.py` | `ConfluenceScorer` — weighted 0-100 scoring + ranking. |
+| `trade_zone_engine.py` | `TradeZoneEngine` public façade + multi-TF. |
 </content>

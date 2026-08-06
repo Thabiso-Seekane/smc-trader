@@ -1,19 +1,35 @@
-"""Smart Money (CHoCH / BOS / MSS) structural-event engine."""
+"""Smart Money (CHoCH / BOS / MSS / Order Block) engine."""
 
 from .analyzer import SmartMoneyAnalyzer
 from .bos import BosDetector
 from .choch import ChoCHDetector
+from .confluence import ConfluenceScorer
 from .displacement import DisplacementDetector, DisplacementScore
 from .engine import StructureEventEngine
 from .enums import (
     BreakSystem,
+    ConfluenceLevel,
     Direction,
     DisplacementQuality,
+    FreshnessLevel,
+    OrderBlockQuality,
+    OrderBlockStatus,
+    OrderBlockType,
     StructureEventType,
+    TradeZoneStatus,
 )
 from .event_history import EventHistory
+from .fair_value_gap import FVGDetector, FairValueGap
+from .mitigation import MitigationDetector
 from .models import SmartMoneyAnalysis, StructureEvent
 from .mss import MSSDetector
+from .order_block_engine import OrderBlockEngine
+from .order_block_models import OrderBlock, OrderBlockMap
+from .order_block_validator import OrderBlockValidator
+from .order_blocks import OrderBlockDetector
+from .ranking import OrderBlockRanker
+from .trade_zone_engine import TradeZoneEngine
+from .trade_zone_models import TradeZone, TradeZoneMap
 from .validator import SmartMoneyValidator
 from .visualizer import SmartMoneyVisualizer
 
@@ -34,4 +50,23 @@ __all__ = [
     "StructureEventEngine",
     "EventHistory",
     "MSSDetector",
+    "OrderBlockType",
+    "OrderBlockStatus",
+    "OrderBlockQuality",
+    "FreshnessLevel",
+    "OrderBlock",
+    "OrderBlockMap",
+    "OrderBlockDetector",
+    "OrderBlockValidator",
+    "MitigationDetector",
+    "OrderBlockRanker",
+    "OrderBlockEngine",
+    "ConfluenceLevel",
+    "TradeZoneStatus",
+    "FairValueGap",
+    "FVGDetector",
+    "ConfluenceScorer",
+    "TradeZone",
+    "TradeZoneMap",
+    "TradeZoneEngine",
 ]

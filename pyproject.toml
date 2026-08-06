@@ -24,6 +24,9 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: Integration tests that require live MT5 credentials",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

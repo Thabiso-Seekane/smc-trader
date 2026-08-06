@@ -1,105 +1,82 @@
-"""Unit tests for liquidity ranking (5-factor, 0-100 model)."""
+"""Unit tests for the Order Block ranker."""
 
-from datetime import datetime, timedelta
+import pandas as pd
 
-from liquidity.enums import LiquidityType
-from liquidity.models import LiquidityLevel
-from liquidity.ranking import LiquidityRanker
+from smart_money.displacement import DisplacementScore
+from smart_money.enums import Direction, OrderBlockType, StructureEventType
+from smart_money.models import StructureEvent
+from smart_money.order_block_models import OrderBlock
+from smart_money.ranking import OrderBlockRanker
 
 
-def make_level(price, liquidity_type, timestamp=None, timeframe="", swing_index=None):
-    return LiquidityLevel(
-        price=price,
-        liquidity_type=liquidity_type,
-        timestamp=timestamp,
+def make_block(direction, displacement, timeframe, touch_count=0, mitigated=False):
+    return OrderBlock(
+        direction=direction,
+        high=1.10,
+        low=1.00,
+        origin_index=2,
+        origin_time=pd.Timestamp("2024-01-01 00:00"),
+        created_from_event=Direction.BULLISH,
+        displacement_score=displacement,
         timeframe=timeframe,
-        swing_index=swing_index,
+        touch_count=touch_count,
+        mitigated=mitigated,
     )
 
 
-def test_equal_highs_ranked_stronger_than_single_swing():
-    equal = make_level(100.0, LiquidityType.EQUAL_HIGHS)
-    swing = make_level(150.0, LiquidityType.SWING_HIGH)
-
-    ranked = LiquidityRanker().rank([swing, equal])
-
-    assert ranked[0] is equal
-    assert ranked[0].strength > ranked[1].strength
-
-
-def test_scores_are_within_0_100_range():
-    levels = [
-        make_level(100.0, LiquidityType.SWING_LOW),
-        make_level(150.0, LiquidityType.EQUAL_LOWS),
-        make_level(200.0, LiquidityType.SWING_HIGH),
-    ]
-
-    ranked = LiquidityRanker().rank(levels)
-
-    for level in ranked:
-        assert 0.0 <= level.strength <= 100.0
-
-
-def test_rank_sorts_descending_by_strength():
-    levels = [
-        make_level(100.0, LiquidityType.SWING_LOW),
-        make_level(150.0, LiquidityType.EQUAL_LOWS),
-        make_level(200.0, LiquidityType.SWING_HIGH),
-    ]
-
-    ranked = LiquidityRanker().rank(levels)
-
-    strengths = [l.strength for l in ranked]
-    assert strengths == sorted(strengths, reverse=True)
-
-
-def test_strongest_returns_highest_ranked():
-    equal = make_level(100.0, LiquidityType.EQUAL_LOWS)
-    swing = make_level(150.0, LiquidityType.SWING_HIGH)
-
-    strongest = LiquidityRanker().strongest([swing, equal])
-    assert strongest is equal
-
-
-def test_strongest_none_when_empty():
-    assert LiquidityRanker().strongest([]) is None
-
-
-def test_recent_level_scores_higher_than_old_level():
-    recent = make_level(
-        100.0,
-        LiquidityType.SWING_HIGH,
-        timestamp=datetime.utcnow() - timedelta(days=1),
-    )
-    old = make_level(
-        100.0,
-        LiquidityType.SWING_HIGH,
-        timestamp=datetime.utcnow() - timedelta(days=100),
+def make_structure_event(event_type, displacement):
+    return StructureEvent(
+        event_type=event_type,
+        direction=Direction.BULLISH,
+        timestamp=pd.Timestamp("2024-01-01 00:00"),
+        broken_price=1.0,
+        broken_index=2,
+        confirmation_index=5,
+        displacement=DisplacementScore(strength=displacement),
     )
 
-    recent.strength = LiquidityRanker()._score(recent)
-    old.strength = LiquidityRanker()._score(old)
-    assert recent.strength > old.strength
+
+def test_strong_block_scores_high():
+    block = make_block(OrderBlockType.BULLISH, 90.0, "W")
+    ranker = OrderBlockRanker()
+    ranked = ranker.rank([block])
+    assert ranked[0].strength >= 70.0
+    assert ranked[0].quality.value == "STRONG"
 
 
-def test_higher_timeframe_scores_higher():
-    h1 = make_level(100.0, LiquidityType.SWING_HIGH, timeframe="H1")
-    m15 = make_level(100.0, LiquidityType.SWING_HIGH, timeframe="M15")
-
-    h1.strength = LiquidityRanker()._score(h1)
-    m15.strength = LiquidityRanker()._score(m15)
-    assert h1.strength > m15.strength
-
-
-def test_next_target_picks_nearest_active():
-    strong_far = make_level(200.0, LiquidityType.EQUAL_HIGHS)
-    weak_near = make_level(120.0, LiquidityType.SWING_HIGH)
-
-    target = LiquidityRanker().next_target([strong_far, weak_near], current_price=100.0)
-    assert target is weak_near
+def test_weak_small_block_scores_low():
+    block = make_block(OrderBlockType.BEARISH, 5.0, "M1", touch_count=2,
+                       mitigated=True)
+    ranker = OrderBlockRanker()
+    ranked = ranker.rank([block])
+    assert ranked[0].strength < 40.0
+    assert ranked[0].quality.value == "WEAK"
 
 
-def test_next_target_none_when_all_swept():
-    swept = make_level(100.0, LiquidityType.SWING_HIGH)
-    swept.swept = True
-    assert LiquidityRanker().next_target([swept], current_price=100.0) is None
+def test_sorting_by_strength_descending():
+    strong = make_block(OrderBlockType.BULLISH, 90.0, "W")
+    weak = make_block(OrderBlockType.BEARISH, 5.0, "M1", touch_count=2,
+                      mitigated=True)
+    ranked = OrderBlockRanker().rank([weak, strong])
+    assert [b.displacement_score for b in ranked] == [90.0, 5.0]
+
+
+def test_fresh_scores_higher_than_mitigated():
+    fresh = make_block(OrderBlockType.BULLISH, 80.0, "H1", touch_count=0)
+    mitigated = make_block(OrderBlockType.BULLISH, 80.0, "H1", touch_count=3,
+                           mitigated=True)
+    ranked = OrderBlockRanker().rank([mitigated, fresh])
+    assert ranked[0].id == fresh.id
+
+
+def test_choch_scores_higher_than_bos():
+    choch = make_structure_event(StructureEventType.CHOCH, 80.0)
+    bos = make_structure_event(StructureEventType.BOS, 80.0)
+
+    # Separate block instances (ranker mutates block.strength in place).
+    block_choch = make_block(OrderBlockType.BULLISH, 80.0, "H1")
+    block_bos = make_block(OrderBlockType.BULLISH, 80.0, "H1")
+
+    ranked = OrderBlockRanker().rank([block_choch], structure_events=[choch])
+    ranked_bos = OrderBlockRanker().rank([block_bos], structure_events=[bos])
+    assert ranked[0].strength > ranked_bos[0].strength

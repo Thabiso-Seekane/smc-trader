@@ -21,7 +21,7 @@ The five factors plus the scope bonus sum to a normalized 0–100 score.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from liquidity.enums import LiquidityScope, LiquidityType
 from liquidity.models import LiquidityLevel
@@ -191,7 +191,8 @@ class LiquidityRanker:
         if level.timestamp is None:
             return self._AGE_WEIGHT * 0.5
 
-        age_days = (datetime.utcnow() - level.timestamp).total_seconds() / 86400.0
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        age_days = (now_utc - level.timestamp).total_seconds() / 86400.0
         if age_days < 0:
             return self._AGE_WEIGHT
         if age_days <= self.recency_window_days:
