@@ -118,6 +118,46 @@ class TradeZoneStatus(str, Enum):
     INVALIDATED = "INVALIDATED"
 
 
+class FillStatus(str, Enum):
+    """Fill state of an imbalance gap.
+
+    * ``OPEN`` — price has not yet traded back into the gap.
+    * ``PARTIAL`` — price has entered the gap but not closed through the
+      far edge (fill percentage between 0 and 100).
+    * ``FILLED`` — price has fully traded through the gap (100%).
+    """
+
+    OPEN = "OPEN"
+    PARTIAL = "PARTIAL"
+    FILLED = "FILLED"
+
+
+class ImbalanceType(str, Enum):
+    """Kind of imbalance a gap represents.
+
+    Fair Value Gap is the primary type implemented in Week 6. Future
+    imbalance types (Volume Imbalance, Opening Gap, Liquidity Void,
+    Inefficient Move) can be added without redesigning the engine.
+    """
+
+    FAIR_VALUE_GAP = "FAIR_VALUE_GAP"
+
+
+class GapQuality(str, Enum):
+    """Quality classification of an imbalance gap.
+
+    * ``NONE`` — no score (0).
+    * ``WEAK`` — minimal confluence (1–39).
+    * ``MODERATE`` — decent confluence (40–69).
+    * ``STRONG`` — high-probability confluence (70+).
+    """
+
+    NONE = "NONE"
+    WEAK = "WEAK"
+    MODERATE = "MODERATE"
+    STRONG = "STRONG"
+
+
 __all__ = [
     "StructureEventType",
     "Direction",
@@ -129,4 +169,7 @@ __all__ = [
     "OrderBlockQuality",
     "ConfluenceLevel",
     "TradeZoneStatus",
+    "FillStatus",
+    "ImbalanceType",
+    "GapQuality",
 ]

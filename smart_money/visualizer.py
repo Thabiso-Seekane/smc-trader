@@ -1,9 +1,9 @@
-"""Smart Money (CHoCH / BOS / Order Block / Trade Zone) visualizer.
+"""Smart Money (CHoCH / BOS / Order Block / Trade Zone / Imbalance) visualizer.
 
 A debugging tool that renders detected structural events, Order Block
-zones, and Trade Zones as interactive Plotly charts. This module is
-intentionally **not** used by the strategy; it exists for developers to
-verify the detection algorithms.
+zones, Trade Zones, and Imbalance (Fair Value Gap) zones as interactive
+Plotly charts. This module is intentionally **not** used by the strategy;
+it exists for developers to verify the detection algorithms.
 
 The chart shows:
 
@@ -15,6 +15,7 @@ The chart shows:
     * BOS events (green up-arrows for bullish, red down-arrows for bearish).
     * Order Block zones (color-coded by state).
     * Trade Zone confluence zones (color-coded by confluence level).
+    * Imbalance / Fair Value Gap zones (color-coded by fill status).
 
 Each event type uses a distinct marker and label so the engineer can
 quickly distinguish a change of character from a break of structure.
@@ -28,8 +29,9 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from liquidity.models import LiquidityMap
-from smart_money.enums import ConfluenceLevel, Direction, StructureEventType
+from smart_money.imbalance import ImbalanceMap
 from smart_money.models import SmartMoneyAnalysis
+from smart_money.enums import ConfluenceLevel, FillStatus
 from smart_money.order_block_models import OrderBlockMap
 from smart_money.trade_zone_models import TradeZoneMap
 from structure.models import MarketStructure
@@ -37,7 +39,7 @@ from structure.models import MarketStructure
 
 @dataclass(slots=True)
 class SmartMoneyVisualizer:
-    """Renders Plotly charts of CHoCH / BOS events, Order Blocks, and Trade Zones."""
+    """Renders Plotly charts of CHoCH / BOS events, Order Blocks, Trade Zones, and Imbalances."""
 
     def build_figure(
         self,
@@ -215,6 +217,114 @@ class SmartMoneyVisualizer:
             hovermode="x unified",
         )
         return fig
+
+    def build_imbalance_figure(
+        self,
+        imbalances: ImbalanceMap,
+        candles: pd.DataFrame | None = None,
+        structure: MarketStructure | None = None,
+        liquidity: LiquidityMap | None = None,
+    ) -> go.Figure:
+        """Build a Plotly figure rendering imbalance (Fair Value Gap) zones.
+
+        Each gap is drawn as a colored rectangle astride its origin candle.
+        The rectangle color reflects the fill status and quality:
+
+            * Open bullish   — green (unfilled)
+            * Open bearish   — red (unfilled)
+            * Partial fill   — blue
+            * Filled         — gray
+
+        The rectangle label shows the fill percentage and strength score.
+
+        Args:
+            imbalances: The :class:`ImbalanceMap` to render.
+            candles: Optional OHLC frame for the background chart.
+            structure: Optional market structure to overlay.
+            liquidity: Optional liquidity map to overlay.
+
+        Returns:
+            A Plotly ``go.Figure``.
+        """
+        fig = go.Figure()
+
+        if candles is not None and not candles.empty:
+            fig.add_trace(
+                go.Candlestick(
+                    x=candles["date"],
+                    open=candles["open"],
+                    high=candles["high"],
+                    low=candles["low"],
+                    close=candles["close"],
+                    name="Price",
+                    showlegend=False,
+                )
+            )
+
+        if structure is not None:
+            self._add_structure_labels(fig, structure)
+
+        if liquidity is not None:
+            self._add_liquidity_sweeps(fig, liquidity)
+
+        for gap in imbalances.all:
+            self._add_imbalance_rectangle(fig, gap, candles)
+
+        fig.update_layout(
+            title="Imbalance Zones — Fair Value Gaps",
+            xaxis_title="Date",
+            yaxis_title="Price",
+            template="plotly_white",
+            hovermode="x unified",
+        )
+        return fig
+
+    def _add_imbalance_rectangle(
+        self,
+        fig: go.Figure,
+        gap,
+        candles: pd.DataFrame | None,
+    ) -> None:
+        """Add a single imbalance gap rectangle colored by fill status."""
+        if gap.fill_status == FillStatus.FILLED:
+            color = "#7f7f7f"
+            label = f"FILLED FVG {gap.fill_percentage:.0f}%"
+        elif gap.fill_status == FillStatus.PARTIAL:
+            color = "#1f77b4"
+            label = f"PARTIAL FVG {gap.fill_percentage:.0f}%"
+        elif gap.is_bullish:
+            color = "#2ca02c"
+            label = f"Bull FVG {gap.strength:.0f}"
+        else:
+            color = "#d62728"
+            label = f"Bear FVG {gap.strength:.0f}"
+
+        # Determine the x-window for the rectangle.
+        x0 = x1 = None
+        if (
+            candles is not None
+            and not candles.empty
+            and gap.index < len(candles)
+        ):
+            x0 = candles["date"].iloc[gap.index]
+            x1 = x0
+        fig.add_trace(
+            go.Scatter(
+                x=[x0, x1, x1, x0, x0] if x0 is not None else None,
+                y=[gap.low, gap.low, gap.high, gap.high, gap.low],
+                mode="lines",
+                fill="toself",
+                fillcolor=color,
+                opacity=0.35,
+                line={"color": color, "width": 1},
+                name=label,
+                showlegend=False,
+                text=[label],
+                hovertemplate=(
+                    f"{label}<br>Fill: %{{y:.5f}}<extra></extra>"
+                ),
+            )
+        )
 
     def _add_trade_zone_rectangle(
         self,

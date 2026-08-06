@@ -340,8 +340,112 @@ pio.show(fig)
 
 | Module | Responsibility |
 |--------|----------------|
-| `fair_value_gap.py` | `FairValueGap` model + `FVGDetector` (Week 6 skeleton). |
+| `fair_value_gap.py` | `FairValueGap` model + `FVGDetector` (Week 6). |
 | `trade_zone_models.py` | `TradeZone`, `TradeZoneMap` data models. |
 | `confluence.py` | `ConfluenceScorer` — weighted 0-100 scoring + ranking. |
 | `trade_zone_engine.py` | `TradeZoneEngine` public façade + multi-TF. |
+
+## Imbalance Engine (Week 6)
+
+The **Imbalance Engine** is a complete, extensible engine for detecting
+price imbalances — currently **Fair Value Gaps (FVGs)** — that is designed
+to accommodate future imbalance types (Volume Imbalance, Opening Gap,
+Liquidity Void, Inefficient Move) without a pipeline redesign.
+
+```
+Price
+  │
+  ▼
+Displacement
+  │
+  ▼
+3-Candle Pattern
+  │
+  ▼
+Create Gap
+  │
+  ▼
+Validate
+  │
+  ▼
+Detect Fill
+  │
+  ▼
+Link (OB / Event / Liquidity)
+  │
+  ▼
+Rank
+  │
+  ▼
+ImbalanceMap
+```
+
+A **Fair Value Gap** is a gap left between the wicks of three consecutive
+candles when a strong displacement occurs:
+
+- **Bullish FVG:** `low(candle[i+2]) > high(candle[i])`
+- **Bearish FVG:** `high(candle[i+2]) < low(candle[i])`
+
+### The domain model
+
+`FairValueGap` — a single gap with `direction`, `high`, `low`,
+`origin_index`, `origin_time`, `created_at`, `displacement`,
+`fill_percentage`, `fill_status`, `filled`, `touch_count`, `freshness`,
+`quality`, and optional links to an aligned `linked_order_block`,
+`linked_structure_event`, and `linked_liquidity`.
+
+`ImbalanceMap` — the aggregated result exposing `bullish`, `bearish`,
+`active`, `partial`, `filled`, and `all`.
+
+### Modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `fair_value_gap.py` | `FairValueGap` model + `FVGDetector` (displacement-gated 3-candle pattern, ATR size gate). |
+| `fills.py` | `FillDetector` — continuous fill percentage, `OPEN`/`PARTIAL`/`FILLED` status, touch count, freshness. |
+| `imbalance_validator.py` | `ImbalanceValidator` — rejects tiny / no-displacement / filled / choppy-range gaps. |
+| `imbalance_ranking.py` | `ImbalanceRanker` — weighted 0-100 score + quality labels. |
+| `imbalance.py` | `ImbalanceMap` model + `ImbalanceEngine` public façade + multi-TF. |
+
+### Usage
+
+```python
+from smart_money import ImbalanceEngine
+
+# structure = structure_engine.analyze(df)
+# liquidity = liquidity_engine.analyze(df, structure)
+# events    = smart_money_engine.analyze(df, structure, liquidity)
+# order_blocks = OrderBlockEngine().analyze(df, structure, liquidity, events)
+
+imbalances = ImbalanceEngine(timeframe="H1").analyze(
+    df,
+    structure=structure,
+    liquidity=liquidity,
+    events=events,
+    order_blocks=order_blocks,
+)
+
+print(imbalances.active)    # open / partially-filled gaps
+print(imbalances.bullish)   # buy-side gaps
+print(imbalances.partial)   # partially-filled gaps
+print(imbalances.strongest) # highest-ranked active gap
+```
+
+### Extensibility
+
+The engine is built around the idea that an **FVG is just one imbalance
+type**. Registering new detectors (Volume Imbalance, Opening Gap, Liquidity
+Void, Inefficient Move) extends the pipeline without touching the existing
+`ImbalanceMap` aggregation, which future modules (Week 7 Confluence Engine)
+consume directly.
+
+### Imbalance visualizer
+
+```python
+import plotly.io as pio
+from smart_money.visualizer import SmartMoneyVisualizer
+
+fig = SmartMoneyVisualizer().build_imbalance_figure(imbalances, candles=df)
+pio.show(fig)
+```
 </content>

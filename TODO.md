@@ -1,49 +1,70 @@
-# Week 5b — Trade Zone Abstraction — Implementation TODO
+# Week 6 — Imbalance Engine — Implementation TODO
 
 ## Goal
-Introduce a `TradeZone` abstraction that aggregates Order Blocks, Fair Value
-Gaps, liquidity, and structural events into a single object with a
-`Confluence Score`. This makes Weeks 6–9 cleaner by letting the future
-Confluence Engine (Week 7) evaluate `TradeZone` objects instead of merging
-unrelated structures on the fly.
+Build a complete, extensible **Imbalance Engine** that detects price
+imbalances — starting with **Fair Value Gaps (FVGs)** — and is designed to
+accommodate future imbalance types (Volume Imbalance, Opening Gap,
+Liquidity Void, Inefficient Move) without a pipeline redesign.
 
 ```
-                  Trade Zone
-                       │
-      ┌────────────────┼─────────────────┐
-      │                │                 │
-      ▼                ▼                 ▼
- Order Block      Fair Value Gap    Liquidity
-                       │
-                       ▼
-                Confluence Score
+Price
+  │
+  ▼
+Displacement
+  │
+  ▼
+3-Candle Pattern
+  │
+  ▼
+Create Gap
+  │
+  ▼
+Validate
+  │
+  ▼
+Detect Fill
+  │
+  ▼
+Link (OB / Event / Liquidity)
+  │
+  ▼
+Rank
+  │
+  ▼
+ImbalanceMap
 ```
 
 ## Steps
 
-- [x] Add `ConfluenceLevel` / `TradeZoneStatus` to `smart_money/enums.py`
-- [x] Create `smart_money/fair_value_gap.py` (FVG skeleton for Week 6)
-- [x] Create `smart_money/trade_zone_models.py` (TradeZone, TradeZoneMap)
-- [x] Create `smart_money/confluence.py` (ConfluenceScorer)
-- [x] Create `smart_money/trade_zone_engine.py` (TradeZoneEngine façade + multi-TF)
-- [x] Extend `smart_money/visualizer.py` (TradeZone rendering)
+- [x] Add `FillStatus`, `ImbalanceType`, `GapQuality` to `smart_money/enums.py`
+- [x] Extend `smart_money/fair_value_gap.py` (rich `FairValueGap` model + real `FVGDetector`)
+- [x] Create `smart_money/fills.py` (`FillDetector` — fill %, status, freshness)
+- [x] Create `smart_money/imbalance_validator.py` (`ImbalanceValidator`)
+- [x] Create `smart_money/imbalance_ranking.py` (`ImbalanceRanker`)
+- [x] Create `smart_money/imbalance.py` (`ImbalanceMap` + `ImbalanceEngine`)
 - [x] Update `smart_money/__init__.py` (export new API)
-- [x] Update `smart_money/README.md` (TradeZone docs)
-- [x] Create `tests/unit/test_trade_zone_models.py`
-- [x] Create `tests/unit/test_confluence.py`
-- [x] Create `tests/unit/test_trade_zone_engine.py`
-- [x] Run full test suite
+- [x] Extend `smart_money/visualizer.py` (`build_imbalance_figure`)
+- [x] Update `smart_money/README.md` (Imbalance Engine docs)
+- [x] Create `tests/unit/test_fair_value_gap.py`
+- [x] Create `tests/unit/test_gap_fill.py`
+- [x] Create `tests/unit/test_gap_validator.py`
+- [x] Create `tests/unit/test_gap_ranking.py`
+- [x] Create `tests/unit/test_imbalance_engine.py`
+- [x] Run full test suite (251 passed, 1 skipped)
 
 ## Dependent Files to Edit
 
 - `smart_money/enums.py`
-- `smart_money/fair_value_gap.py` (new)
-- `smart_money/trade_zone_models.py` (new)
-- `smart_money/confluence.py` (new)
-- `smart_money/trade_zone_engine.py` (new)
-- `smart_money/visualizer.py`
+- `smart_money/fair_value_gap.py`
+- `smart_money/fills.py` (new)
+- `smart_money/imbalance_validator.py` (new)
+- `smart_money/imbalance_ranking.py` (new)
+- `smart_money/imbalance.py` (new)
 - `smart_money/__init__.py`
+- `smart_money/visualizer.py`
 - `smart_money/README.md`
-- `tests/unit/test_trade_zone_models.py` (new)
-- `tests/unit/test_confluence.py` (new)
-- `tests/unit/test_trade_zone_engine.py` (new)
+- `tests/unit/test_fair_value_gap.py` (new)
+- `tests/unit/test_gap_fill.py` (new)
+- `tests/unit/test_gap_validator.py` (new)
+- `tests/unit/test_gap_ranking.py` (new)
+- `tests/unit/test_imbalance_engine.py` (new)
