@@ -1,89 +1,80 @@
-# Week 8 — Risk & Trading Plan Engine — Implementation TODO
+# Week 9 — Backtesting Engine & Performance Analytics — Implementation TODO
 
 ## Goal
-Build a Risk & Trade Planning Engine that converts a Week 7 `TradeZone`
-into a complete, executable `TradePlan`. The risk engine answers:
+Build a **deterministic, event-driven backtesting engine** that replays the
+full SMC pipeline (Market Structure → Liquidity → CHoCH/BOS → Order Blocks →
+FVG → Strategy → Trade Plan → Execution) against historical OHLC data.
 
-* How much should I risk?
-* What lot size should I trade?
-* Where should my stop-loss go?
-* Where should my take-profit go?
-* Does this trade meet the minimum R:R?
-* How much money will I lose if stopped out?
-* How much money can I make if the target is hit?
-* Should this trade be rejected because of risk?
+The engine processes candles **sequentially** (no future data / no
+look-ahead bias) and uses the **same** strategy + risk-management logic that
+the future paper/live engine will use. It simulates execution (spread,
+slippage, commission, intrabar resolution), tracks a portfolio, and produces
+performance analytics (equity curve, drawdown, win rate, profit factor,
+expectancy, R-multiple distribution, Sharpe, confluence attribution).
 
 ```
-              Confluence Engine
-                     │
-                     ▼
-                   Trade Zone
-                     │
-                     ▼
-                Risk Management
-                     │
-      ┌──────────────┴──────────────┐
-      ▼                             ▼
- Position Sizing              Trade Validation
-      │                             │
-      └──────────────┬──────────────┘
-                     ▼
-                 Trade Plan
-                     │
-                     ▼
-                Execution
+              Strategy
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+   Backtest Engine   Paper Engine
+        │                 │
+        ▼                 ▼
+   Simulator            MT5
 ```
 
 ## Steps
 
-- [x] Create `risk/enums.py` (`PositionSizingMethod`, `RiskStatus`, `PlanStatus`)
-- [x] Create `risk/models.py` (`TradePlan`, `RiskMetrics`, `PositionSize`)
-- [x] Create `risk/account.py` (`Account` — balance, equity, risk tracking)
-- [x] Create `risk/position_size.py` (`PositionSizer` — risk-based lot sizing)
-- [x] Create `risk/stop_loss.py` (`StopLossPlacer` — stop placement rules)
-- [x] Create `risk/take_profit.py` (`TakeProfitPlacer` — target placement rules)
-- [x] Create `risk/risk_reward.py` (`RiskRewardAnalyzer` — R:R validation)
-- [x] Create `risk/validator.py` (`RiskValidator` — reject over-risk trades)
-- [x] Create `risk/analyzer.py` (`RiskAnalyzer` — public façade)
-- [x] Create `risk/visualizer.py` (TradePlan rendering)
-- [x] Create `risk/__init__.py` (export new API)
-- [x] Create `risk/README.md` (Risk Engine docs)
-- [x] Create `tests/unit/test_risk_enums.py`
-- [x] Create `tests/unit/test_risk_models.py`
-- [x] Create `tests/unit/test_risk_account.py`
-- [x] Create `tests/unit/test_risk_position_size.py`
-- [x] Create `tests/unit/test_risk_stop_loss.py`
-- [x] Create `tests/unit/test_risk_take_profit.py`
-- [x] Create `tests/unit/test_risk_reward.py`
-- [x] Create `tests/unit/test_risk_validator.py`
-- [x] Create `tests/unit/test_risk_analyzer.py`
-- [x] Create `tests/unit/test_risk_visualizer.py`
-- [x] Run full test suite
-- [x] Update `TODO.md` checklist
-- [ ] Commit & push `feature/week8-risk-trading-plan`
+- [ ] Create `backtesting/enums.py` (`OrderType`, `OrderStatus`, `PositionStatus`, `TradeResultType`, `ExitReason`, `IntrabarResolution`)
+- [ ] Create `backtesting/models.py` (`BacktestConfig`, `Order`, `Position`, `Trade`, `EquityPoint`, `BacktestResult`, `PerformanceSummary`)
+- [ ] Create `backtesting/commission.py` (`CommissionModel` — per-lot commission)
+- [ ] Create `backtesting/slippage.py` (`SlippageModel` — entry/exit slippage)
+- [ ] Create `backtesting/orders.py` (`OrderManager` — order lifecycle)
+- [ ] Create `backtesting/position.py` (`PositionManager` — open/close positions)
+- [ ] Create `backtesting/portfolio.py` (`Portfolio` — balance, equity, open/closed positions, exposure)
+- [ ] Create `backtesting/simulator.py` (`TradeSimulator` — sequential candle processing, conservative intrabar)
+- [ ] Create `backtesting/equity_curve.py` (`EquityCurve` — equity points)
+- [ ] Create `backtesting/metrics.py` (`PerformanceMetrics` — return, win rate, PF, expectancy, drawdown, Sharpe, R-analysis)
+- [ ] Create `backtesting/analyzer.py` (`BacktestAnalyzer` — confluence-score attribution)
+- [ ] Create `backtesting/report.py` (`BacktestReport` — CSV / JSON / HTML export)
+- [ ] Create `backtesting/visualizer.py` (equity, drawdown, R-distribution, monthly returns, confluence vs performance)
+- [ ] Create `backtesting/engine.py` (`BacktestEngine` — public façade)
+- [ ] Create `backtesting/__init__.py` (export new API)
+- [ ] Create `backtesting/README.md` (Backtesting docs)
+- [ ] Create `tests/unit/test_backtest_enums.py`
+- [ ] Create `tests/unit/test_backtest_models.py`
+- [ ] Create `tests/unit/test_commission.py`
+- [ ] Create `tests/unit/test_slippage.py`
+- [ ] Create `tests/unit/test_orders.py`
+- [ ] Create `tests/unit/test_position.py`
+- [ ] Create `tests/unit/test_portfolio.py`
+- [ ] Create `tests/unit/test_simulator.py`
+- [ ] Create `tests/unit/test_equity_curve.py`
+- [ ] Create `tests/unit/test_metrics.py`
+- [ ] Create `tests/unit/test_backtest_engine.py`
+- [ ] Create `tests/integration/test_full_backtest.py`
+- [ ] Run full test suite
+- [ ] Update `TODO.md` checklist
+- [ ] Commit & push `feature/week9-backtesting-engine`
 
 ## Dependent Files to Edit
 
-- `risk/` package (activate)
-- `risk/enums.py` (new)
-- `risk/models.py` (new)
-- `risk/account.py` (new)
-- `risk/position_size.py` (new)
-- `risk/stop_loss.py` (new)
-- `risk/take_profit.py` (new)
-- `risk/risk_reward.py` (new)
-- `risk/validator.py` (new)
-- `risk/analyzer.py` (new)
-- `risk/visualizer.py` (new)
-- `risk/README.md` (new)
-- `risk/__init__.py`
-- `tests/unit/test_risk_enums.py` (new)
-- `tests/unit/test_risk_models.py` (new)
-- `tests/unit/test_risk_account.py` (new)
-- `tests/unit/test_position_size.py` (new)
-- `tests/unit/test_stop_loss.py` (new)
-- `tests/unit/test_take_profit.py` (new)
-- `tests/unit/test_risk_reward.py` (new)
-- `tests/unit/test_risk_validator.py` (new)
-- `tests/unit/test_risk_analyzer.py` (new)
-
+- `backtesting/` package (activate)
+- `backtesting/enums.py` (new)
+- `backtesting/models.py` (new)
+- `backtesting/commission.py` (new)
+- `backtesting/slippage.py` (new)
+- `backtesting/orders.py` (new)
+- `backtesting/position.py` (new)
+- `backtesting/portfolio.py` (new)
+- `backtesting/simulator.py` (new)
+- `backtesting/equity_curve.py` (new)
+- `backtesting/metrics.py` (new)
+- `backtesting/analyzer.py` (new)
+- `backtesting/report.py` (new)
+- `backtesting/visualizer.py` (new)
+- `backtesting/engine.py` (new)
+- `backtesting/README.md` (new)
+- `backtesting/__init__.py`
+- `tests/unit/test_backtest_*.py` (new)
+- `tests/integration/test_full_backtest.py` (new)
