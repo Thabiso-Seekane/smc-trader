@@ -95,3 +95,59 @@ def test_equity_curve_recorded():
     engine = BacktestEngine(config=BacktestConfig(initial_balance=10000.0))
     result = engine.run(make_data())
     assert len(result.equity_curve) > 0
+
+
+def test_automatic_position_sizing_from_risk_budget():
+    # balance 10000 * 1% = $100 risk budget; entry 100 / stop 95 => distance
+    # 5 => volume 20.
+    config = BacktestConfig(
+        initial_balance=10_000.0,
+        commission=0.0,
+        risk_per_trade=0.01,
+    )
+    engine = BacktestEngine(config=config)
+    volume = engine._size_volume(100.0, 95.0)
+    assert volume == pytest.approx(20.0)
+    assert engine._risk_amount(volume, 100.0, 95.0) == pytest.approx(100.0)
+
+
+def test_engine_uses_auto_sizing_when_volume_omitted():
+    config = BacktestConfig(
+        initial_balance=10_000.0,
+        commission=0.0,
+        risk_per_trade=0.01,
+    )
+    engine = BacktestEngine(config=config)
+
+    def executor(candle):
+        if candle.Index == 0:
+            # volume omitted -> engine sizes to the $100 risk budget.
+            return [(100.0, 95.0, 130.0, None, 85.0, "setup", "BUY")]
+        return []
+
+    result = engine.run(make_data(), executor=executor)
+    if result.positions:
+        pos = result.positions[0]
+        assert pos.risk_amount == pytest.approx(100.0, abs=0.5)
+        assert pos.volume == pytest.approx(20.0, abs=0.5)
+
+
+def test_risk_cap_blocks_excessive_concurrent_risk():
+    # With a $100 budget, a single position already consumes it; a second
+    # position would push aggregate risk over the cap and must be rejected.
+    config = BacktestConfig(
+        initial_balance=10_000.0,
+        commission=0.0,
+        risk_per_trade=0.01,
+    )
+    engine = BacktestEngine(config=config)
+    # First position consumes the full $100 budget.
+    assert engine._within_risk_cap(100.0, 95.0, 20.0)
+    pos = engine.positions.open_position(
+        Order(symbol="X", direction=Direction.BUY, volume=20.0),
+        price=100.0, stop_loss=95.0, take_profit=130.0,
+        risk_amount=100.0,
+    )
+    engine.portfolio.open_position(pos)
+    # A second position with any positive risk must be rejected.
+    assert not engine._within_risk_cap(100.0, 95.0, 1.0)

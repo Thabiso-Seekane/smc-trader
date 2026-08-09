@@ -113,7 +113,8 @@ class BacktestEngine:
             executor: Optional callable taking the current candle row and
                 returning a list of :class:`Order` objects, or a list of
                 tuples ``(entry, stop, target, volume[, confluence, reason,
-                direction])``.
+                direction])``. When ``volume`` is ``None`` the engine sizes
+                it automatically from the risk budget and stop distance.
 
         Returns:
             A fully populated :class:`BacktestResult`.
@@ -158,6 +159,7 @@ class BacktestEngine:
         self.last_result = result
         return result
 
+    # --- order submission & position sizing -------------------
     def _submit_orders(self, orders, timestamp) -> None:
         """Submit orders produced by the executor.
 
@@ -165,6 +167,12 @@ class BacktestEngine:
             * a list of :class:`Order` objects, or
             * a list of tuples ``(entry, stop, target, volume[, confluence,
               reason, direction])``.
+
+        When ``volume`` is ``None`` the engine derives the volume from the
+        current balance, ``risk_per_trade``, and the *entry→stop* distance —
+        the same fixed-fractional sizing the live/paper engine will use. It
+        also enforces a risk cap so concurrent positions cannot collectively
+        exceed the configured per-trade risk budget.
         """
         if not orders:
             return
@@ -172,7 +180,8 @@ class BacktestEngine:
             if isinstance(item, Order):
                 self.orders.submit(item)
                 continue
-            entry, stop, target, volume = item[0], item[1], item[2], item[3]
+            entry, stop, target = float(item[0]), float(item[1]), float(item[2])
+            volume = item[3] if len(item) > 3 else None
             confluence = float(item[4]) if len(item) > 4 else 0.0
             reason = str(item[5]) if len(item) > 5 else ""
             direction = item[6] if len(item) > 6 else "BUY"
@@ -183,34 +192,95 @@ class BacktestEngine:
                 if str(direction).upper() == "BUY"
                 else Direction.SELL
             )
+
+            # Automatic position sizing from the risk budget.
+            if volume is None:
+                volume = self._size_volume(entry, stop)
+            volume = float(volume)
+
+            # Risk cap: skip if opening would exceed the aggregate budget.
+            if not self._within_risk_cap(entry, stop, volume):
+                continue
+
             order = Order(
                 symbol=self.config.symbol,
                 direction=direction_enum,
-                volume=float(volume),
+                volume=volume,
                 reason=reason,
             )
             self.orders.submit(order)
             pos = self.positions.open_position(
                 order,
-                price=float(entry),
-                stop_loss=float(stop),
-                take_profit=float(target),
-                risk_amount=self._risk_amount(
-                    float(volume), float(stop), float(target)
-                ),
+                price=entry,
+                stop_loss=stop,
+                take_profit=target,
+                risk_amount=self._risk_amount(volume, entry, stop),
                 timestamp=timestamp,
                 confluence_score=confluence,
                 reason=reason,
             )
             self.portfolio.open_position(pos)
 
-    @staticmethod
-    def _risk_amount(volume: float, stop: float, target: float) -> float:
-        """Estimate the currency risked for a raw order tuple."""
-        if stop == target:
-            return 0.0
-        return abs(target - stop) * volume
+    def _risk_budget(self) -> float:
+        """Return the currency risk budget for a single trade.
 
+        Risk budget = current balance x ``risk_per_trade``.
+        """
+        return self.portfolio.balance * self.config.risk_per_trade
+
+    def _size_volume(self, entry: float, stop: float) -> float:
+        """Compute a volume so a stop-out loses exactly the risk budget.
+
+        Args:
+            entry: The proposed entry price.
+            stop: The stop-loss price.
+
+        Returns:
+            The lot/unit volume sized to the risk budget.
+        """
+        stop_distance = abs(entry - stop)
+        if stop_distance <= 0:
+            return 0.0
+        return self._risk_budget() / stop_distance
+
+    def _risk_amount(self, volume: float, entry: float, stop: float) -> float:
+        """Estimate the currency at risk for a position.
+
+        Args:
+            volume: The volume / lot size.
+            entry: The entry price.
+            stop: The stop-loss price.
+
+        Returns:
+            The currency at risk (stop distance x volume).
+        """
+        return abs(entry - stop) * volume
+
+    def _within_risk_cap(self, entry: float, stop: float, volume: float) -> bool:
+        """Return True when opening a position keeps aggregate risk in bounds.
+
+        The cap is the configured per-trade risk budget. A single position
+        sized to that budget is the maximum; combined open risk may not
+        exceed it.
+
+        Args:
+            entry: The proposed entry price.
+            stop: The proposed stop-loss price.
+            volume: The proposed volume.
+
+        Returns:
+            Whether opening the position is permitted.
+        """
+        budget = self._risk_budget()
+        if budget <= 0:
+            return True
+        new_risk = self._risk_amount(volume, entry, stop)
+        existing_risk = sum(
+            p.risk_amount for p in self.portfolio.open_positions
+        )
+        return (existing_risk + new_risk) <= budget * 1.0001
+
+    # --- result assembly --------------------------------------
     def _build_result(self) -> BacktestResult:
         """Assemble the final :class:`BacktestResult`."""
         trades = self.positions.trades
@@ -248,3 +318,4 @@ class BacktestEngine:
 
 
 __all__ = ["BacktestEngine"]
+
