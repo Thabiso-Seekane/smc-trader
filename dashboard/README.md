@@ -35,12 +35,14 @@ Open the printed local URL (default `http://localhost:8501`).
 ```
 dashboard/
 ├── app.py          # Streamlit entrypoint + navigation
-├── config.py       # DashboardConfig (presentation-only settings)
+├── settings.py     # DashboardConfig (presentation-only settings)
 ├── state.py        # st.session_state helpers
 ├── services.py     # Orchestrates the pipeline (only place touching engines)
 ├── charts.py       # Plotly chart builders
-├── sidebar.py      # Sidebar controls
-└── pages/          # One module per page
+├── components.py   # Shared presentation components
+├── widgets/        # Reusable input widgets (sidebar controls)
+└── pages/          # overview, market_structure, liquidity, strategy,
+                    # backtesting, trades, and settings
 ```
 
 The dashboard is a **pure presentation layer** — it never contains trading

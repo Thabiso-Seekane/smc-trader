@@ -30,9 +30,9 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 
 from dashboard.settings import DashboardConfig
-from dashboard.pages import backtest, confluence, liquidity, market_structure, overview, settings, smart_money, trade_log
+from dashboard.pages import backtesting, liquidity, market_structure, overview, settings, smart_money, strategy, trades
 from dashboard.services import load_analysis
-from dashboard.sidebar import render_sidebar
+from dashboard.widgets.sidebar import render_sidebar
 from dashboard.state import get_bundle, set_bundle
 
 st.set_page_config(
@@ -58,9 +58,9 @@ PAGES = {
     "Market Structure": market_structure,
     "Liquidity": liquidity,
     "Smart Money (CHoCH/BOS/OB/FVG)": smart_money,
-    "Confluence & Strategy": confluence,
-    "Backtest": backtest,
-    "Trade Log": trade_log,
+    "Confluence & Strategy": strategy,
+    "Backtest": backtesting,
+    "Trade Log": trades,
     "Settings": settings,
 }
 
