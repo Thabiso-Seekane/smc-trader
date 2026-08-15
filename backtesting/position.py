@@ -30,6 +30,7 @@ class PositionManager:
 
     commission: CommissionModel = field(default_factory=CommissionModel)
     slippage: SlippageModel = field(default_factory=SlippageModel)
+    contract_size: float = 1.0
     open_positions: list[Position] = field(default_factory=list)
     closed_positions: list[Position] = field(default_factory=list)
     trades: list[Trade] = field(default_factory=list)
@@ -66,6 +67,7 @@ class PositionManager:
             direction=order.direction,
             entry_price=entry_price,
             volume=order.volume,
+            contract_size=self.contract_size,
             stop_loss=stop_loss,
             take_profit=take_profit,
             entry_time=timestamp or datetime.now(),
@@ -74,7 +76,7 @@ class PositionManager:
             confluence_score=confluence_score,
             reason=reason,
         )
-        pos.slippage_cost = abs(entry_price - price) * order.volume
+        pos.slippage_cost = abs(entry_price - price) * order.volume * self.contract_size
         self.open_positions.append(pos)
         return pos
 
@@ -87,11 +89,11 @@ class PositionManager:
             low: The candle low.
         """
         if pos.is_buy:
-            pos.mfe = max(pos.mfe, (high - pos.entry_price) * pos.volume)
-            pos.mae = min(pos.mae, (low - pos.entry_price) * pos.volume)
+            pos.mfe = max(pos.mfe, (high - pos.entry_price) * pos.volume * self.contract_size)
+            pos.mae = min(pos.mae, (low - pos.entry_price) * pos.volume * self.contract_size)
         else:
-            pos.mfe = max(pos.mfe, (pos.entry_price - low) * pos.volume)
-            pos.mae = min(pos.mae, (pos.entry_price - high) * pos.volume)
+            pos.mfe = max(pos.mfe, (pos.entry_price - low) * pos.volume * self.contract_size)
+            pos.mae = min(pos.mae, (pos.entry_price - high) * pos.volume * self.contract_size)
 
     def close_position(
         self,
@@ -118,7 +120,7 @@ class PositionManager:
         pos.exit_time = timestamp
         pos.exit_reason = reason
         pos.commission = commission
-        pos.slippage_cost += abs(exit_price - price) * pos.volume
+        pos.slippage_cost += abs(exit_price - price) * pos.volume * self.contract_size
         pos.profit_loss = raw_pnl - commission
         pos.status = PositionStatus.CLOSED
 
@@ -150,8 +152,8 @@ class PositionManager:
     def _raw_pnl(self, pos: Position, exit_price: float) -> float:
         """Return the raw P&L (before commission) at an exit price."""
         if pos.is_buy:
-            return (exit_price - pos.entry_price) * pos.volume
-        return (pos.entry_price - exit_price) * pos.volume
+            return (exit_price - pos.entry_price) * pos.volume * pos.contract_size
+        return (pos.entry_price - exit_price) * pos.volume * pos.contract_size
 
     @staticmethod
     def _classify(pnl: float) -> TradeResultType:

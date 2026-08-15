@@ -29,6 +29,7 @@ Open the printed local URL (default `http://localhost:8501`).
 | Backtest                 | Run the Week 9 backtest, equity curve, drawdown, R, monthly.   |
 | Trade Log                | Every closed trade with attribution and P/L.                   |
 | Settings                 | Active symbol, analysis, risk, and read-only execution posture. |
+| Paper Trading            | Persisted virtual account, positions, journal, and current signal. |
 
 ## Architecture
 

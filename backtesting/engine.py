@@ -35,7 +35,7 @@ from backtesting.commission import CommissionModel
 from backtesting.equity_curve import EquityCurve
 from backtesting.metrics import PerformanceMetrics
 from backtesting.models import BacktestConfig, BacktestResult, Order
-from backtesting.enums import Direction
+from backtesting.enums import Direction, ExitReason
 from backtesting.orders import OrderManager
 from backtesting.portfolio import Portfolio
 from backtesting.position import PositionManager
@@ -83,7 +83,9 @@ class BacktestEngine:
         self.portfolio.reset(self.config.initial_balance)
         self.orders = OrderManager()
         self.positions = PositionManager(
-            commission=self.commission, slippage=self.slippage
+            commission=self.commission,
+            slippage=self.slippage,
+            contract_size=max(float(self.config.contract_size), 1.0),
         )
         self.simulator = TradeSimulator(
             orders=self.orders,
@@ -145,12 +147,29 @@ class BacktestEngine:
             # Process the bar: fill pending orders and resolve exits.
             self.simulator.process_candle(high, low, close, ts)
 
+            self.equity_curve.record(
+                ts or datetime.now(),
+                self.portfolio.balance,
+                self.portfolio.equity(close),
+            )
+
         # Final equity snapshot.
         last_close = (
             float(data["close"].iloc[-1]) if "close" in data else 0.0
         )
+        last_timestamp = (
+            data["date"].iloc[-1] if "date" in data else datetime.now()
+        )
+        # Reconcile every position at the end of the requested sample. An
+        # open position is real exposure and must not disappear from trade
+        # count, return, or final balance.
+        for position in list(self.positions.open_positions):
+            self.positions.close_position(
+                position, last_close, ExitReason.TIME_EXIT, last_timestamp
+            )
+            self.portfolio.close_position(position)
         self.equity_curve.record(
-            datetime.now(),
+            last_timestamp,
             self.portfolio.balance,
             self.portfolio.equity(last_close),
         )
@@ -241,7 +260,11 @@ class BacktestEngine:
         stop_distance = abs(entry - stop)
         if stop_distance <= 0:
             return 0.0
-        return self._risk_budget() / stop_distance
+        loss_per_lot = (
+            stop_distance * max(float(self.config.contract_size), 1.0)
+            + self.commission.charge(1.0)
+        )
+        return self._risk_budget() / loss_per_lot if loss_per_lot > 0 else 0.0
 
     def _risk_amount(self, volume: float, entry: float, stop: float) -> float:
         """Estimate the currency at risk for a position.
@@ -254,7 +277,8 @@ class BacktestEngine:
         Returns:
             The currency at risk (stop distance x volume).
         """
-        return abs(entry - stop) * volume
+        price_risk = abs(entry - stop) * volume * max(float(self.config.contract_size), 1.0)
+        return price_risk + self.commission.charge(volume)
 
     def _within_risk_cap(self, entry: float, stop: float, volume: float) -> bool:
         """Return True when opening a position keeps aggregate risk in bounds.
@@ -291,6 +315,7 @@ class BacktestEngine:
             final_balance=final_balance,
             trades=trades,
             equity_curve=self.equity_curve.points,
+            max_drawdown=self.equity_curve.max_drawdown,
         )
         summary = self.metrics.summarize(provisional)
         return BacktestResult(

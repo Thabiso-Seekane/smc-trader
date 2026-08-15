@@ -36,17 +36,13 @@ def _normalize_timeframe(timeframe: Any) -> Any:
     """Convert common string timeframes to their MetaTrader5 equivalents."""
 
     if isinstance(timeframe, str):
-        mapping = {
-            "M1": 1,
-            "M5": 5,
-            "M15": 15,
-            "M30": 30,
-            "H1": 60,
-            "H4": 240,
-            "D1": 1440,
-            "W1": 10080,
+        mt5_module = _require_mt5()
+        fallbacks = {
+            "M1": 1, "M5": 5, "M15": 15, "M30": 30,
+            "H1": 16385, "H4": 16388, "D1": 16408, "W1": 32769,
         }
-        return mapping.get(timeframe.upper(), timeframe)
+        key = timeframe.upper()
+        return getattr(mt5_module, f"TIMEFRAME_{key}", fallbacks.get(key, timeframe))
     return timeframe
 
 
@@ -116,6 +112,52 @@ def symbols() -> list[str]:
     return mt5_module.symbols_get()
 
 
+def resolve_symbol(symbol: str) -> str | None:
+    """Resolve a portable symbol name to the connected broker's name.
+
+    Brokers commonly expose gold as ``GOLD`` instead of ``XAUUSD`` or add
+    suffixes such as ``EURUSD.a``. Exact matches are preferred, followed by
+    well-known aliases and then prefix/suffix variants.
+    """
+    requested = str(symbol).strip()
+    if not requested:
+        return None
+    available = [getattr(item, "name", item) for item in symbols()]
+    names = [str(name) for name in available if name]
+    by_upper = {name.upper(): name for name in names}
+    key = requested.upper()
+    if key in by_upper:
+        return by_upper[key]
+
+    aliases = {
+        "XAUUSD": ("GOLD", "GOLD24-7"),
+        "XAGUSD": ("SILVER",),
+    }
+    for alias in aliases.get(key, ()):
+        if alias in by_upper:
+            return by_upper[alias]
+
+    variants = [
+        name for name in names
+        if name.upper().startswith(key) or name.upper().endswith(key)
+    ]
+    return min(variants, key=len) if variants else None
+
+
+def symbol_info(symbol: str) -> Any:
+    """Return read-only MT5 symbol metadata for market-data consumers."""
+    if not _connected:
+        connect()
+    return _require_mt5().symbol_info(symbol)
+
+
+def get_tick(symbol: str) -> Any:
+    """Return the latest read-only bid/ask tick; never places an order."""
+    if not _connected:
+        connect()
+    return _require_mt5().symbol_info_tick(symbol)
+
+
 def get_rates(symbol: str, timeframe: Any = None, count: int = 0) -> list[dict[str, Any]]:
     """Download OHLCV rates for the specified symbol."""
 
@@ -136,4 +178,32 @@ def get_rates(symbol: str, timeframe: Any = None, count: int = 0) -> list[dict[s
     )
 
 
-__all__ = ["connect", "disconnect", "account_info", "terminal_info", "symbols", "get_rates"]
+def order_calc_profit(action, symbol: str, volume: float, price_open: float, price_close: float):
+    """Ask MT5 to calculate P&L in the connected account currency."""
+    if not _connected:
+        connect()
+    return _require_mt5().order_calc_profit(action, symbol, volume, price_open, price_close)
+
+
+def order_calc_margin(action, symbol: str, volume: float, price: float):
+    """Ask MT5 to calculate required margin in account currency."""
+    if not _connected:
+        connect()
+    return _require_mt5().order_calc_margin(action, symbol, volume, price)
+
+
+def order_check(request: dict):
+    """Run the broker/server preflight without sending an order."""
+    if not _connected:
+        connect()
+    return _require_mt5().order_check(request)
+
+
+def order_send(request: dict):
+    """Send a preflighted request. Callers must enforce independent gates."""
+    if not _connected:
+        connect()
+    return _require_mt5().order_send(request)
+
+
+__all__ = ["connect", "disconnect", "account_info", "terminal_info", "symbols", "resolve_symbol", "symbol_info", "get_tick", "get_rates", "order_calc_profit", "order_calc_margin", "order_check", "order_send"]

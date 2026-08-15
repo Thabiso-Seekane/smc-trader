@@ -1,4 +1,4 @@
-"""Week 10 Streamlit Dashboard — main entrypoint.
+"""Week 10 Streamlit Dashboard - main entrypoint.
 
 Run with::
 
@@ -6,11 +6,11 @@ Run with::
 
 The app wires the full SMC pipeline together:
 
-    data → structure → liquidity → CHoCH/BOS → order blocks → FVG
-    → strategy → risk → backtest
+    data -> structure -> liquidity -> CHoCH/BOS -> order blocks -> FVG
+    -> strategy -> risk -> backtest
 
 and renders the results with Plotly inside Streamlit. It is a **read-only**
-analysis/backtesting tool — it never places a live order.
+analysis/backtesting tool - it never places a live order.
 """
 
 from __future__ import annotations
@@ -30,14 +30,14 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 
 from dashboard.settings import DashboardConfig
-from dashboard.pages import backtesting, liquidity, market_structure, overview, settings, smart_money, strategy, trades
+from dashboard.pages import backtesting, liquidity, market_structure, overview, paper_trading, settings, smart_money, strategy, trades
 from dashboard.services import load_analysis
 from dashboard.widgets.sidebar import render_sidebar
 from dashboard.state import get_bundle, set_bundle
 
 st.set_page_config(
     page_title="SMC Trader",
-    page_icon="📊",
+    page_icon=":bar_chart:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -61,6 +61,7 @@ PAGES = {
     "Confluence & Strategy": strategy,
     "Backtest": backtesting,
     "Trade Log": trades,
+    "Paper Trading": paper_trading,
     "Settings": settings,
 }
 

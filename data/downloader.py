@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from data.mt5_client import get_rates as get_mt5_rates
+from data.mt5_client import symbol_info as get_mt5_symbol_info
 
 
 def download_candles(symbol: str, timeframe: str | None = None, count: int | None = None) -> pd.DataFrame:
@@ -18,7 +19,9 @@ def download_candles(symbol: str, timeframe: str | None = None, count: int | Non
 
     raw_rates = get_mt5_rates(symbol=symbol, timeframe=timeframe, count=count)
 
-    if not raw_rates:
+    # MetaTrader5 returns a NumPy structured array.  Its truth value is
+    # intentionally ambiguous, so never use ``if not raw_rates`` here.
+    if raw_rates is None or len(raw_rates) == 0:
         return pd.DataFrame(
             columns=["date", "open", "high", "low", "close", "volume", "spread", "real_volume"]
         )
@@ -36,6 +39,15 @@ def download_candles(symbol: str, timeframe: str | None = None, count: int | Non
     )
     frame["date"] = pd.to_datetime(frame["date"], unit="s")
     frame = frame.sort_values("date").reset_index(drop=True)
+
+    try:
+        info = get_mt5_symbol_info(symbol)
+        if info is not None:
+            frame.attrs["contract_size"] = float(getattr(info, "trade_contract_size", 1.0))
+            frame.attrs["point"] = float(getattr(info, "point", 0.0))
+    except Exception:
+        # Offline and injected data sources do not need broker metadata.
+        pass
 
     return frame
 

@@ -3,10 +3,10 @@
 The services module is the *only* place that touches the trading engines. It
 orchestrates the full pipeline:
 
-    MT5 / data_store → structure → liquidity → CHoCH/BOS → OB → FVG
-    → strategy → risk → backtest
+    MT5 / data_store -> structure -> liquidity -> CHoCH/BOS -> OB -> FVG
+    -> strategy -> risk -> backtest
 
-The Streamlit pages never contain trading logic — they call these services
+The Streamlit pages never contain trading logic - they call these services
 and render the returned objects. This keeps the dashboard a pure
 presentation layer (Week 10 rule: no ``if choch and bos and fvg`` in the UI).
 """
@@ -31,6 +31,7 @@ from smart_money.analyzer import SmartMoneyAnalyzer
 from smart_money.imbalance import ImbalanceEngine
 from smart_money.order_block_engine import OrderBlockEngine
 from strategy.analyzer import StrategyAnalyzer
+from strategy.filters import StrategyFilters
 from structure.analyzer import MarketStructureAnalyzer
 
 # --- risk -----------------------------------------------------
@@ -42,6 +43,19 @@ from backtesting.engine import BacktestEngine
 from backtesting.models import BacktestConfig, BacktestResult
 
 from dashboard.settings import DashboardConfig
+
+
+@st.cache_resource(show_spinner=False)
+def get_paper_broker():
+    """Return the persisted paper broker used only for dashboard inspection."""
+    from config.settings import settings
+    from execution.paper_broker import PaperBroker
+    from execution.persistence import PaperStore
+
+    return PaperBroker(
+        PaperStore(settings.paper_database),
+        initial_balance=settings.paper_initial_balance,
+    )
 
 
 @dataclass(slots=True)
@@ -77,7 +91,7 @@ def load_historical_data(
     """Load (and validate) historical candles for a symbol/timeframe.
 
     Falls back to the parquet data store when MT5 is unavailable. The
-    dashboard never downloads data on every rerun — callers should wrap this
+    dashboard never downloads data on every rerun - callers should wrap this
     in ``st.cache_data``.
     """
     # Try to load from the data store first (fastest, no MT5 needed).
@@ -251,7 +265,16 @@ def analyze_symbol(
     )
 
     # 6) Strategy confluence (Week 7).
-    strategy = StrategyAnalyzer(timeframe=timeframe).analyze(
+    strategy = StrategyAnalyzer(
+        timeframe=timeframe,
+        filters=StrategyFilters(
+            min_confluence=config.min_confluence,
+            min_displacement=config.min_displacement,
+            premium_discount_match=config.premium_discount_match,
+            min_risk_reward=config.min_rr,
+            require_liquidity_sweep=config.require_liquidity_sweep,
+        ),
+    ).analyze(
         df=df,
         structure=structure,
         liquidity=liquidity,
@@ -304,44 +327,78 @@ def run_backtest(
 
     The executor replays each candle **sequentially** (no look-ahead) and
     submits the strategy's best setup as an order. Risk-managed volume is
-    computed by the engine from ``risk_per_trade`` + stop distance — the
+    computed by the engine from ``risk_per_trade`` + stop distance - the
     dashboard only supplies the setup geometry.
     """
     frame = df
     if start_date is not None and end_date is not None:
         frame = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
 
-    setup = _best_setup_for_frame(frame, symbol, timeframe, config)
+    point = float(frame.attrs.get("point", 0.0) or 0.0)
+    contract_size = float(frame.attrs.get("contract_size", 1.0) or 1.0)
+    observed_spread = (
+        float(frame["spread"].median()) * point
+        if point > 0 and "spread" in frame and not frame["spread"].empty
+        else 0.0
+    )
 
     engine = BacktestEngine(
         config=BacktestConfig(
             initial_balance=config.balance,
             commission=7.0,
-            slippage=0.05,
-            spread=0.0,
-            risk_per_trade=config.risk_percent,
+            slippage=point * 0.5 if point > 0 else 0.0,
+            spread=observed_spread,
+            # Dashboard/user settings express risk as a percentage (1 = 1%),
+            # while BacktestConfig deliberately stores a fraction.
+            risk_per_trade=config.risk_percent / 100.0,
             symbol=symbol,
             timeframe=timeframe,
+            contract_size=contract_size,
         )
     )
 
+    seen_setups: set[tuple] = set()
+    warmup = min(100, max(20, len(frame) // 5))
+    lookback = min(500, len(frame))
+
     def executor(row):
-        if setup is None:
+        index = int(row.Index)
+        if index < warmup:
             return []
-        # Re-submit the setup on the first candle (deterministic single setup).
-        if row.Index == 0:
-            return [
-                (
-                    setup.entry_price,
-                    setup.stop_loss,
-                    setup.target,
-                    0.0,  # volume -> engine sizes from risk
-                    setup.confluence_score,
-                    setup.reason,
-                    setup.direction.value if hasattr(setup.direction, "value") else str(setup.direction),
-                )
-            ]
-        return []
+        # Orders evaluated before the current bar may only use information
+        # through the previous closed candle. This makes the earliest
+        # execution the following bar and avoids same-bar high/low leakage.
+        history = frame.iloc[max(0, index - lookback):index]
+        setup = _best_setup_for_frame(history, symbol, timeframe, config)
+        if setup is None or not setup.is_valid:
+            return []
+        if setup.confluence_score < config.min_confluence:
+            return []
+        if setup.risk_reward_ratio < config.min_rr:
+            return []
+
+        # Zone UUIDs are rebuilt on every analysis pass. Use stable market
+        # geometry to prevent the same unchanged setup from firing each bar.
+        setup_key = (
+            str(setup.direction),
+            round(float(setup.entry_price), 8),
+            round(float(setup.stop_loss), 8),
+            round(float(setup.target), 8),
+        )
+        if setup_key in seen_setups:
+            return []
+        seen_setups.add(setup_key)
+        return [
+            (
+                setup.entry_price,
+                setup.stop_loss,
+                setup.target,
+                None,  # engine sizes from configured fractional risk
+                setup.confluence_score,
+                setup.reason,
+                setup.direction.value if hasattr(setup.direction, "value") else str(setup.direction),
+            )
+        ]
 
     return engine.run(frame, executor=executor)
 
@@ -367,4 +424,5 @@ __all__ = [
     "load_analysis",
     "analyze_symbol",
     "run_backtest",
+    "get_paper_broker",
 ]

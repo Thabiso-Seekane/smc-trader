@@ -21,6 +21,10 @@ htmlcov/
 logs/
 *.log
 
+# Local runtime state
+data_store/*.db
+data_store/*.db-*
+
 # IDE
 .vscode/
 .idea/

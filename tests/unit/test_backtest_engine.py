@@ -132,6 +132,21 @@ def test_engine_uses_auto_sizing_when_volume_omitted():
         assert pos.volume == pytest.approx(20.0, abs=0.5)
 
 
+def test_open_position_is_reconciled_at_end_of_data():
+    engine = BacktestEngine(
+        config=BacktestConfig(initial_balance=10_000.0, commission=0.0)
+    )
+
+    def executor(candle):
+        return [(100.0, 90.0, 130.0, 1.0, 85.0, "setup", "BUY")] if candle.Index == 0 else []
+
+    result = engine.run(make_data(), executor=executor)
+
+    assert result.total_trades == 1
+    assert result.trades[0].exit_reason == ExitReason.TIME_EXIT
+    assert engine.portfolio.open_count == 0
+
+
 def test_risk_cap_blocks_excessive_concurrent_risk():
     # With a $100 budget, a single position already consumes it; a second
     # position would push aggregate risk over the cap and must be rejected.

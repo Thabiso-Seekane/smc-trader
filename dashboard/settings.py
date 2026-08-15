@@ -39,6 +39,9 @@ class DashboardConfig:
     risk_percent: float = field(default_factory=lambda: settings.risk_percent)
     min_confluence: float = DEFAULT_MIN_CONFLUENCE
     min_rr: float = DEFAULT_MIN_RR
+    min_displacement: float = 0.0
+    require_liquidity_sweep: bool = False
+    premium_discount_match: bool = False
     instrument_joint: float = DEFAULT_INSTRUMENT_JOINT
     candle_count: int = field(
         # The dashboard is an interactive presentation surface. Keeping a

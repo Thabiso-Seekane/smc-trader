@@ -49,6 +49,7 @@ class BacktestConfig:
     intrabar_resolution: str = "CONSERVATIVE"
     symbol: str = ""
     timeframe: str = ""
+    contract_size: float = 1.0
 
 
 @dataclass(slots=True)
@@ -139,6 +140,7 @@ class Position:
     direction: Direction = Direction.BUY
     entry_price: float = 0.0
     volume: float = 0.0
+    contract_size: float = 1.0
     stop_loss: float = 0.0
     take_profit: float = 0.0
     entry_time: datetime = field(default_factory=datetime.now)
@@ -208,8 +210,8 @@ class Position:
         Uses a per-unit price-change × volume model (volume in units).
         """
         if self.is_buy:
-            return (price - self.entry_price) * self.volume
-        return (self.entry_price - price) * self.volume
+            return (price - self.entry_price) * self.volume * self.contract_size
+        return (self.entry_price - price) * self.volume * self.contract_size
 
     def __hash__(self) -> int:
         """Hash by position identity (id)."""

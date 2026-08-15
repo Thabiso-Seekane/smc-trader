@@ -1,5 +1,3 @@
-import os
-
 from config.settings import Settings
 
 
@@ -53,3 +51,25 @@ def test_settings_uses_defaults_when_values_are_not_provided(monkeypatch):
     assert settings.log_level == "INFO"
     assert settings.log_directory == "logs"
     assert settings.data_directory == "data_store"
+
+
+def test_live_trading_requires_mode_and_explicit_gate():
+    paper = Settings(mt5_login=100100, mt5_password="pwd", mt5_server="Broker")
+    live_without_gate = Settings(
+        mt5_login=100100,
+        mt5_password="pwd",
+        mt5_server="Broker",
+        trading_mode="live",
+        live_trading_enabled=False,
+    )
+    live_with_gate = Settings(
+        mt5_login=100100,
+        mt5_password="pwd",
+        mt5_server="Broker",
+        trading_mode="live",
+        live_trading_enabled=True,
+    )
+
+    assert not paper.live_trading_authorized
+    assert not live_without_gate.live_trading_authorized
+    assert live_with_gate.live_trading_authorized

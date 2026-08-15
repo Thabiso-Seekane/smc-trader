@@ -14,9 +14,10 @@ def test_settings_load_from_env_and_expose_required_values():
     resolved = get_settings()
 
     assert resolved is settings
-    assert resolved.mt5_login == 90679000
-    assert resolved.mt5_password == "CryptoLyte007#"
-    assert resolved.mt5_server == "XMGlobal-MT5 5"
+    assert isinstance(resolved.mt5_login, int)
+    assert resolved.mt5_login > 0
+    assert resolved.mt5_password
+    assert resolved.mt5_server
     assert resolved.default_symbol == "XAUUSD"
     assert resolved.default_timeframe == "M15"
     assert resolved.candles_to_download == 5000

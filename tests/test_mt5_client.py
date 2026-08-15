@@ -52,6 +52,27 @@ def test_mt5_client_public_api(monkeypatch):
     assert mt5_client.account_info() == {"login": 123456, "server": "test-server"}
     assert mt5_client.terminal_info() == {"build": 1234}
     assert mt5_client.symbols() == ["EURUSD", "XAUUSD"]
+    assert mt5_client.resolve_symbol("xauusd") == "XAUUSD"
     assert mt5_client.get_rates("XAUUSD", "M15", 3) == [{"symbol": "XAUUSD", "timeframe": 15, "count": 3}]
     mt5_client.disconnect()
     assert fake_mt5.initialized is False
+
+
+def test_resolve_symbol_supports_broker_aliases_and_suffixes(monkeypatch):
+    monkeypatch.setattr(
+        mt5_client,
+        "symbols",
+        lambda: [SimpleNamespace(name="GOLD"), SimpleNamespace(name="EURUSD.a")],
+    )
+
+    assert mt5_client.resolve_symbol("XAUUSD") == "GOLD"
+    assert mt5_client.resolve_symbol("EURUSD") == "EURUSD.a"
+    assert mt5_client.resolve_symbol("UNKNOWN") is None
+
+
+def test_hourly_timeframe_uses_mt5_constant(monkeypatch):
+    fake_mt5 = FakeMT5()
+    fake_mt5.TIMEFRAME_H1 = 16385
+    monkeypatch.setattr(mt5_client, "mt5", fake_mt5)
+
+    assert mt5_client._normalize_timeframe("H1") == 16385
